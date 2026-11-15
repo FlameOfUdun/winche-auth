@@ -550,7 +550,7 @@ internal sealed partial class WincheAuthService(
         return new WincheUser { Id = uid, UserName = uid, CreatedAt = time.GetUtcNow(), LockoutEnabled = true };
     }
 
-    /// <summary>28 random letters and digits, like a Firebase uid.</summary>
+    /// <summary>28 random letters and digits.</summary>
     internal static string NewUid() => RandomNumberGenerator.GetString("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", 28);
 
     private async Task<WincheUserInfo> InfoAsync(WincheUser u) =>
