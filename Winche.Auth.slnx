@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Winche.Auth/Winche.Auth.csproj" />
+    <Project Path="src/Winche.Auth.AspNetCore/Winche.Auth.AspNetCore.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Winche.Auth.Tests/Winche.Auth.Tests.csproj" />
+  </Folder>
+</Solution>
