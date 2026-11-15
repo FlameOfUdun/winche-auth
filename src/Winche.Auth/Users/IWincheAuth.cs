@@ -86,6 +86,8 @@ public interface IWincheAuth
     Task<MfaEnrollment> StartTotpEnrollmentAsync(string uid, CancellationToken ct = default);
     /// <summary>Turns two-step sign-in on once the app's first code checks out; returns the recovery codes (shown once).</summary>
     Task<IReadOnlyList<string>> ConfirmTotpEnrollmentAsync(string uid, string code, CancellationToken ct = default);
+    /// <summary>Like <see cref="ConfirmTotpEnrollmentAsync(string, string, CancellationToken)"/>, keeping <paramref name="keepSession"/> (the one turning it on) signed in.</summary>
+    Task<IReadOnlyList<string>> ConfirmTotpEnrollmentAsync(string uid, string code, Guid? keepSession, CancellationToken ct = default);
     /// <summary>New recovery codes (the old ones stop working), with a current code.</summary>
     Task<IReadOnlyList<string>> RegenerateRecoveryCodesAsync(string uid, string code, CancellationToken ct = default);
     /// <summary>Turns two-step sign-in off, with a current code.</summary>
