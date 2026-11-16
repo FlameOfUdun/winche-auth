@@ -12,7 +12,7 @@ internal sealed class TokenIssuer(SigningKeyStore keys, WincheAuthOptions option
     public static readonly HashSet<string> Reserved = new(StringComparer.Ordinal)
     {
         "iss", "aud", "sub", "uid", "exp", "iat", "nbf", "jti", "auth_time", "provider", "email", "email_verified", "name",
-        "picture", "anonymous", "issuer", "mfa", "sid", "amr", "acr", "azp", "nonce", "at_hash", "c_hash", "firebase",
+        "picture", "anonymous", "issuer", "mfa", "sid", "amr", "acr", "azp", "nonce", "at_hash", "c_hash",
     };
 
     public async Task<(string Token, DateTimeOffset ExpiresAt)> IssueAsync(WincheUser user, string provider, DateTimeOffset authTime, CancellationToken ct,
