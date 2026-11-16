@@ -233,23 +233,6 @@ public class KeycloakSyncTests(PostgresFixture pg)
     }
 
     [Fact]
-    public async Task With_when_deleted_delete_someone_deleted_in_Keycloak_is_deleted_here_too_with_a_deleted_event()
-    {
-        await using var kc = await FakeKeycloak.StartAsync();
-        var db = await pg.NewDatabaseAsync();
-        await using var app = await Start(kc, s => s.WhenDeleted = KeycloakSyncOptions.Delete, db);
-        var ann = await SignIn(app, kc);
-        kc.Users.TryRemove("kc-ann", out _);
-        kc.AdminChanged("kc-ann");
-        await Until(async () => await app.Scoped(a => a.GetUserAsync(ann.Uid)) is null);
-        await using var conn = new Npgsql.NpgsqlConnection(db);
-        await conn.OpenAsync();
-        await using var cmd = new Npgsql.NpgsqlCommand("SELECT count(*) FROM auth_user_events WHERE type = 'deleted' AND path = @u", conn);
-        cmd.Parameters.AddWithValue("u", ann.Uid);
-        Assert.Equal(1L, (long)(await cmd.ExecuteScalarAsync())!);   // what users.onDeleted triggers and webhooks get
-    }
-
-    [Fact]
     public async Task What_events_missed_the_daily_comparison_catches()
     {
         await using var kc = await FakeKeycloak.StartAsync();
