@@ -308,7 +308,7 @@ The token's issuer picks the check. Rules see `request.auth.uid` either way, and
 
 ## Users in database documents
 
-With Winche.Database in the same app, a user reference in a document (`userRefValue`, e.g. an `author` field) can be
+With Winche.Database in the same app, a user reference in a document (`userReferenceValue`, e.g. an `author` field) can be
 expanded: `expand: ["author"]` returns the user's public profile under `resolved` (`user:<uid>`): `uid`, `displayName`, `photoUrl`, and the custom claims you list in
 `o.PublicProfileClaims` (none by default). Signed-in callers see that much of anyone, a user sees their own account in
 full, signed-out callers see nothing, and functions (the app's own code) see everything. Live subscriptions follow
