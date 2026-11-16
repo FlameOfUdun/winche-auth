@@ -27,6 +27,21 @@ internal sealed partial class WincheAuthService
         var user = await users.FindByLoginAsync(provider.Name, subject);
         if (user is null) return null;
         var source = ProviderName(provider.Name);
+        if (state is null && provider.KeycloakSync?.WhenDeleted == KeycloakSyncOptions.Delete)
+        {
+            // Deleted there, and that's where accounts are kept: deleted here too (sessions with it).
+            var uid = user.Id;
+            await InTransaction(async () =>
+            {
+                var info = await InfoAsync(user);
+                var deleted = await users.DeleteAsync(user);
+                if (!deleted.Succeeded) throw Failed(deleted);
+                await Record(WincheAuthUserEvent.Deleted, info, ct);
+            }, ct);
+            AuthEvents.Log(_events, LogLevel.Warning, $"auth.sync.{provider.Name}", uid, "ok",
+                $"{uid} ({user.Email ?? "no email"}) was deleted in {source}: deleted here too.", user.Email);
+            return "deleted";
+        }
         var changes = new List<string>();
         await InTransaction(async () =>
         {

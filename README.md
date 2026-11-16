@@ -152,7 +152,7 @@ o.OpenIdConnect("keycloak", k =>
 ```
 
 Set in settings instead (the console's Authentication → Sign-in method, with `o.UseSettings()`): the provider's
-`keycloakSync` (`KeycloakSyncSettings`: `ClientId`, `AdminServer`, `PollSeconds`, `ReconcileHours`, `Attributes`), its
+`keycloakSync` (`KeycloakSyncSettings`: `ClientId`, `AdminServer`, `PollSeconds`, `ReconcileHours`, `WhenDeleted`, `Attributes`), its
 client secret kept encrypted in the app's secret store as `auth.provider.<name>.keycloakSync.clientSecret`
 (`KeycloakSyncSettings.SecretName(name)`). A sync set in code wins.
 
@@ -160,7 +160,7 @@ client secret kept encrypted in the app's secret store as `auth.provider.<name>.
 |---|---|
 | Disabled | Disabled, every session ended (`disabled` event) |
 | Enabled again | Enabled, if the sync disabled them (never one an admin disabled here) |
-| Deleted | Disabled and unlinked from Keycloak; the account and its data stay for an admin to decide |
+| Deleted | Disabled and unlinked from Keycloak; the account and its data stay for an admin to decide. With `s.WhenDeleted = KeycloakSyncOptions.Delete` (when Keycloak is where accounts are kept): deleted here too, with a `deleted` event, so the app's `users.onDeleted` triggers and webhooks remove the person's data |
 | Name, email, email verified | Updated (an email another account here has is left, with a warning in the logs) |
 | Roles, groups, attributes | The copied claims (`s.Claims`, else `MapClaims`): `realm_access` from realm roles, `groups` from group paths, anything else from the user attribute of that name |
 

@@ -25,6 +25,16 @@ public sealed class KeycloakSyncOptions
     /// </summary>
     public string? AdminServer { get; set; }
 
+    public const string Disable = "disable", Delete = "delete";
+
+    /// <summary>
+    /// What becomes of a Winche user whose Keycloak account is deleted: <see cref="Disable"/> (the default) keeps them,
+    /// disabled and unlinked, for an admin to decide; <see cref="Delete"/> deletes them here too, as when Keycloak is
+    /// where accounts are kept, so a deletion there (a person leaving, their right to erasure) reaches the app's data
+    /// through its <c>users.onDeleted</c> triggers and webhooks.
+    /// </summary>
+    public string WhenDeleted { get; set; } = Disable;
+
     /// <summary>How often Keycloak's events are read for changed users (default 10 seconds).</summary>
     public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(10);
 

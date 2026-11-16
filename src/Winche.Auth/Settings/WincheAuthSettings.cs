@@ -78,6 +78,7 @@ public sealed record WincheAuthSettings
                 {
                     ClientId = ks.ClientId, AdminServer = string.IsNullOrWhiteSpace(ks.AdminServer) ? null : ks.AdminServer.Trim(),
                     PollInterval = TimeSpan.FromSeconds(ks.PollSeconds), ReconcileInterval = TimeSpan.FromHours(ks.ReconcileHours),
+                    WhenDeleted = ks.WhenDeleted,
                     ClientSecretName = KeycloakSyncSettings.SecretName(p.Name),
                 };
                 foreach (var (attribute, claim) in ks.Attributes) sync.MapAttribute(attribute, claim);
@@ -132,6 +133,7 @@ public sealed record WincheAuthSettings
                     problems.Add($"Provider '{p.Name}': Keycloak sync needs an OpenID Connect provider whose address is a Keycloak realm (…/realms/<realm>).");
                 if (string.IsNullOrWhiteSpace(ks.ClientId)) problems.Add($"Provider '{p.Name}': give the Keycloak sync's client id.");
                 if (ks.PollSeconds is < 2 or > 3600 || ks.ReconcileHours is < 1 or > 24 * 30) problems.Add($"Provider '{p.Name}': read events every 2 s to 1 h, compare everyone every 1 hour to 30 days.");
+                if (ks.WhenDeleted is not (KeycloakSyncOptions.Disable or KeycloakSyncOptions.Delete)) problems.Add($"Provider '{p.Name}': someone deleted in Keycloak is disabled or deleted here.");
             }
         }
         if (problems.Count > 0) return problems;
@@ -205,6 +207,8 @@ public sealed record KeycloakSyncSettings
     public string? AdminServer { get; init; }
     public int PollSeconds { get; init; } = 10;
     public int ReconcileHours { get; init; } = 24;
+    /// <summary>disable (default) or delete: what becomes of someone deleted in Keycloak (<see cref="KeycloakSyncOptions.WhenDeleted"/>).</summary>
+    public string WhenDeleted { get; init; } = KeycloakSyncOptions.Disable;
     /// <summary>Keycloak user attributes kept as custom claims: attribute name → claim name.</summary>
     public IReadOnlyDictionary<string, string> Attributes { get; init; } = new Dictionary<string, string>();
 
