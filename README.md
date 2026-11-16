@@ -19,6 +19,12 @@ Or keep your own identity provider and trust its tokens directly. You can do bot
 | `Winche.Auth` | users, sessions, signing keys, `IWincheAuth` |
 | `Winche.Auth.AspNetCore` | the REST API, the `Winche` authentication scheme, `WincheClaims` |
 
+## Install
+
+```sh
+dotnet add package Winche.Auth.AspNetCore   # the /auth/v1 endpoints and token checking; brings Winche.Auth
+```
+
 ## Setup
 
 ```csharp
