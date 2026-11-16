@@ -150,7 +150,7 @@ public sealed class SigningKeyStore
             }
             // Keys older than the one that signs are done signing.
             if (Active(Build(all), now) is { } active)
-                foreach (var k in all.Where(k => k.RetiredAt is null && k.CreatedAt < active.CreatedAt)) k.RetiredAt = now;
+                foreach (var k in all.Where(k => k.RetiredAt is null && k.Kid != active.Kid && k.CreatedAt < active.CreatedAt)) k.RetiredAt = now;
             // Retired keys go once no token they signed can still be valid.
             var keepFor = options.AccessTokenLifetime + TimeSpan.FromDays(1);
             foreach (var k in all.Where(k => k.RetiredAt is { } r && now - r > keepFor).ToList())
@@ -219,6 +219,8 @@ public sealed class SigningKeyStore
 
     private AuthSigningKey NewKey(DateTimeOffset now)
     {
+        // PostgreSQL keeps microseconds: the time cached here must be the one read back, or the key looks older than itself.
+        now = now.AddTicks(-(now.Ticks % TimeSpan.TicksPerMicrosecond));
         using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         return new AuthSigningKey
         {

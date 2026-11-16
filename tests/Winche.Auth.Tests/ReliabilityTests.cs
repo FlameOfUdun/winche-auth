@@ -114,7 +114,9 @@ public class ReliabilityTests(PostgresFixture pg)
     [Fact]
     public async Task The_next_key_is_published_a_day_before_it_signs()
     {
-        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        // A time finer than PostgreSQL keeps (it stores microseconds), as the system clock often gives.
+        var start = DateTimeOffset.UtcNow;
+        var clock = new FakeTimeProvider(start.AddTicks(7 - start.Ticks % TimeSpan.TicksPerMicrosecond));
         await using var app = await TestApp.StartAsync(await pg.NewDatabaseAsync(), services: s => s.AddSingleton<TimeProvider>(clock),
             auth: o => { o.KeyRotationInterval = TimeSpan.FromDays(10); o.AccessTokenLifetime = TimeSpan.FromDays(30); });
         var ann = await app.SignUpAsync("ann@example.com");
