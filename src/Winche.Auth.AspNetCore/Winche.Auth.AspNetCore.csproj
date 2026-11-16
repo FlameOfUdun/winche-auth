@@ -10,8 +10,8 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />
-    <PackageReference Include="Winche.Core" Version="1.0.0" />
-    <PackageReference Include="Winche.Core.AspNetCore" Version="1.0.0" />
+    <PackageReference Include="Winche.Core" Version="2.0.0" />
+    <PackageReference Include="Winche.Core.AspNetCore" Version="2.0.0" />
     <ProjectReference Include="..\Winche.Auth\Winche.Auth.csproj" />
   </ItemGroup>
 

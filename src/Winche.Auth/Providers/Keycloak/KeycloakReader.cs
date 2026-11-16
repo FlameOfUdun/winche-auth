@@ -33,9 +33,9 @@ internal sealed class KeycloakReader : IDisposable
     /// <summary>The claims it reads, for applying a user.</summary>
     public IReadOnlyList<string> ClaimNames => _claims;
 
-    private readonly Winche.Core.SecretStore? _secrets;
+    private readonly Winche.Secrets.SecretStore? _secrets;
 
-    public KeycloakReader(IdentityProviderOptions provider, Winche.Core.SecretStore? secrets = null)
+    public KeycloakReader(IdentityProviderOptions provider, Winche.Secrets.SecretStore? secrets = null)
     {
         _secrets = secrets;
         _options = provider.KeycloakSync!;

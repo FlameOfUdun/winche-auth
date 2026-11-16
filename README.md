@@ -153,7 +153,7 @@ o.OpenIdConnect("keycloak", k =>
 
 Set in settings instead (the console's Authentication → Sign-in method, with `o.UseSettings()`): the provider's
 `keycloakSync` (`KeycloakSyncSettings`: `ClientId`, `AdminServer`, `PollSeconds`, `ReconcileHours`, `Attributes`), its
-client secret kept encrypted in the app's secret store as `auth.provider.<name>.keycloakSync.clientSecret`
+client secret kept encrypted in the app's secret store (Winche.Secrets) as `auth.provider.<name>.keycloakSync.clientSecret`
 (`KeycloakSyncSettings.SecretName(name)`). A sync set in code wins.
 
 | In Keycloak | In Winche |

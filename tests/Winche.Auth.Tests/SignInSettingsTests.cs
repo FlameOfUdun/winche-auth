@@ -8,6 +8,7 @@ using Microsoft.IdentityModel.JsonWebTokens;
 using Winche.Auth.Email;
 using Winche.Auth.Settings;
 using Winche.Core;
+using Winche.Secrets;
 using Xunit;
 
 namespace Winche.Auth.Tests;

@@ -28,6 +28,7 @@ public static class ServiceCollectionExtensions
         options.Validate();
         services.AddSingleton(options);
         AuthChanges.Add(services);   // user events for webhooks and functions
+        Winche.Secrets.SecretsServiceCollectionExtensions.AddWincheSecrets(services);   // provider and SMTP secrets set in the console
         if (options.SettingsEnabled)
         {
             // The console may change these: the code's values are where they start.
@@ -67,7 +68,7 @@ public static class ServiceCollectionExtensions
         // user: for the database's expand (a document field holding a uid comes back with the user's public profile).
         services.AddSingleton<IWincheReferenceResolver>(sp => new Users.UserReferenceResolver(sp, options));
         services.AddSingleton(sp => new Providers.ProviderSyncs(sp.GetRequiredKeyedService<NpgsqlDataSource>(AuthUserEvents.DataSourceKey), options,
-            sp.GetService<Winche.Core.SecretStore>()));   // a sync set in settings keeps its client secret there
+            sp.GetService<Winche.Secrets.SecretStore>()));   // a sync set in settings keeps its client secret there
         services.AddWincheProductService<Providers.KeycloakSyncService>(WincheProductNames.Authentication);
         return services;
     }

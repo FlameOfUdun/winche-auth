@@ -53,9 +53,9 @@ public sealed class ProviderSyncs : IDisposable
     internal NpgsqlDataSource Db { get; }
     private readonly WincheAuthOptions _options;
 
-    private readonly Winche.Core.SecretStore? _secrets;
+    private readonly Winche.Secrets.SecretStore? _secrets;
 
-    internal ProviderSyncs(NpgsqlDataSource db, WincheAuthOptions options, Winche.Core.SecretStore? secrets = null) => (Db, _options, _secrets) = (db, options, secrets);
+    internal ProviderSyncs(NpgsqlDataSource db, WincheAuthOptions options, Winche.Secrets.SecretStore? secrets = null) => (Db, _options, _secrets) = (db, options, secrets);
 
     internal IEnumerable<IdentityProviderOptions> Synced => _options.IdentityProviders.Where(p => p.KeycloakSync is not null);
 

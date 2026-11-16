@@ -55,7 +55,7 @@ public sealed class SmtpEmailSender : IAuthEmailSender
     {
         var smtp = _email.Smtp!;
         var password = smtp.Password;
-        if (string.IsNullOrEmpty(password) && _services.GetService(typeof(Winche.Core.SecretStore)) is Winche.Core.SecretStore secrets && secrets.Available)
+        if (string.IsNullOrEmpty(password) && _services.GetService(typeof(Winche.Secrets.SecretStore)) is Winche.Secrets.SecretStore secrets && secrets.Available)
             password = await secrets.GetAsync(SecretName, ct);
         await SendAsync(smtp, _email.AppName, password, message, ct);
     }
