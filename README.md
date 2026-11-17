@@ -384,3 +384,10 @@ unhealthy without the database or a signing key, and degraded when user events f
   (`link/password`, `link/idp`) doesn't.
 - An access token is read from `?access_token=` only on WebSocket upgrades (browsers can't set headers there); anywhere
   else it would end up in logs. Tokens carry `sid`, their session.
+
+## Upgrading to 2.0
+
+- **Breaking:** secrets (a Keycloak sync's client secret, the SMTP password) are kept by [Winche.Secrets](https://github.com/FlameOfUdun/winche-secrets) instead of Winche.Core
+  (Core 2.0); `AddWincheAuth` adds the store. Saved secrets read as before, and either can now be a reference to AWS
+  Secrets Manager or Parameter Store.
+- Only Winche's own claim names are reserved: other claims a provider or your code sets are kept.
