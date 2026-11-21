@@ -248,7 +248,7 @@ reads it and posts it). Links to the app's own page (`ActionUrl`) and sign-in li
 Codes are single-use, stored only as hashes, replaced when a newer one of the same kind is
 sent; at most five messages an hour per address (`Bob@` and `bob@` are one address). Password-reset and sign-in-link
 emails go out after the request is answered, so its timing doesn't tell whether the address has an account
-(`e.SendInBackground = false` sends them first). Winche Auth's own page at `/auth/v1/action` only acts when its button is
+(`e.SendInBackground = false`, or `email.sendInBackground: false` in the console's settings, sends them first). Winche Auth's own page at `/auth/v1/action` only acts when its button is
 pressed, so mail scanners opening links don't use them up. The messages are editable in the Winche console
 (Authentication → Email templates), with `%APP_NAME%`, `%EMAIL%`, `%NEW_EMAIL%`, `%DISPLAY_NAME%` and `%LINK%`. Locally,
 `e.LogLinks()` sends nothing and writes the links to the log.
@@ -384,6 +384,12 @@ unhealthy without the database or a signing key, and degraded when user events f
   (`link/password`, `link/idp`) doesn't.
 - An access token is read from `?access_token=` only on WebSocket upgrades (browsers can't set headers there); anywhere
   else it would end up in logs. Tokens carry `sid`, their session.
+
+## 2.0.1
+
+- Fixed: with an SMTP server, sign-in-link and password-reset emails sent after answering were lost ("Cannot access a
+  disposed object" in the log). The SMTP password is now read before answering.
+- `email.sendInBackground` in the settings (the console: Authentication → Settings → Emails to users), on by default.
 
 ## Upgrading to 2.0
 
