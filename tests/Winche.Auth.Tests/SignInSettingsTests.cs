@@ -175,6 +175,39 @@ public class SignInSettingsTests(PostgresFixture pg)
         Assert.Contains("To: ann@example.com", data);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Sign_in_links_and_password_resets_go_over_smtp_sent_after_answering_or_before(bool background)
+    {
+        using var smtp = new FakeSmtp();
+        await using var app = await Start(await pg.NewDatabaseAsync());
+        var area = app.Service<SettingsArea<WincheAuthSettings>>();
+        await app.Service<SecretStore>().SetAsync(SmtpEmailSender.SecretName, "smtp-pass", "admin@example.com");
+        await app.Service<SettingsStore>().SaveAsync(WincheAuthSettings.Area, Doc(area.Current with
+        {
+            EmailLink = new EmailLinkSettings { Enabled = true, LinkUrl = "https://app.example.com/finish" },
+            Email = new EmailSettings
+            {
+                Enabled = true, AppName = "Clinic", Sender = "smtp", SendVerificationOnSignUp = false, SendInBackground = background,
+                Smtp = new SmtpSettings { Host = "127.0.0.1", Port = smtp.Port, Security = "none", Username = "mailer", FromAddress = "no-reply@example.com" },
+            },
+        }), "admin@example.com", "Send email");
+        Assert.Equal(background, area.Current.Email.SendInBackground);
+        await app.SignUpAsync("ann@example.com");
+
+        // Through the HTTP endpoints: a background send happens after the request's services are disposed.
+        Assert.Equal(HttpStatusCode.NoContent, (await app.PostAsync("/auth/v1/sendSignInLink", new { email = "ann@example.com" })).StatusCode);
+        if (!background) Assert.Single(smtp.Received);   // sent before answering
+        Assert.Equal(HttpStatusCode.NoContent, (await app.PostAsync("/auth/v1/sendPasswordReset", new { email = "ann@example.com" })).StatusCode);
+
+        for (var i = 0; i < 100 && smtp.Received.Count < 2; i++) await Task.Delay(50);
+        Assert.Equal(2, smtp.Received.Count);
+        Assert.All(smtp.Received, r => Assert.Equal(("mailer", "smtp-pass"), (r.User, r.Password)));
+        Assert.Contains(smtp.Received, r => r.Data.Contains("mode=signIn"));
+        Assert.Contains(smtp.Received, r => r.Data.Contains("mode=resetPassword"));
+    }
+
     [Fact]
     public async Task What_only_code_can_give_is_kept_for_a_provider_of_the_same_name()
     {

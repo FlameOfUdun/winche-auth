@@ -348,6 +348,8 @@ internal sealed partial class WincheAuthService
             AuthEvents.Log(_events, LogLevel.Information, $"auth.send.{template}", user?.Id ?? to, "ok", $"Sent a {template} email to {to}.", to);
             return;
         }
+        // Sent after the answer: by then this request's services are gone, so whatever the sender needs from them is read now.
+        if (sender is SmtpEmailSender smtp) sender = await smtp.ReadyAsync(ct);
         var log = _events;
         _ = Task.Run(async () =>
         {

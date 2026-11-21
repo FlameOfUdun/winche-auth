@@ -42,7 +42,8 @@ public sealed class SmtpEmailSender : IAuthEmailSender
     public const string SecretName = "auth.smtp.password";
 
     private readonly AuthEmailOptions _email;
-    private readonly IServiceProvider _services;
+    private readonly IServiceProvider? _services;
+    private readonly string? _password;
 
     /// <summary>Sends through <paramref name="email"/>'s SMTP server; the password from it or Winche.Core's secret store.</summary>
     public SmtpEmailSender(AuthEmailOptions email, IServiceProvider services)
@@ -51,13 +52,28 @@ public sealed class SmtpEmailSender : IAuthEmailSender
         _services = services;
     }
 
-    public async Task SendAsync(AuthEmailMessage message, CancellationToken ct)
+    private SmtpEmailSender(AuthEmailOptions email, string? password)
     {
-        var smtp = _email.Smtp!;
-        var password = smtp.Password;
-        if (string.IsNullOrEmpty(password) && _services.GetService(typeof(Winche.Secrets.SecretStore)) is Winche.Secrets.SecretStore secrets && secrets.Available)
+        _email = email;
+        _password = password;
+    }
+
+    public async Task SendAsync(AuthEmailMessage message, CancellationToken ct) =>
+        await SendAsync(_email.Smtp!, _email.AppName, _services is null ? _password : await PasswordAsync(ct), message, ct);
+
+    /// <summary>
+    /// A sender with the password already read, needing nothing from <c>services</c>: for sending after the request
+    /// that asked has been answered (its services are gone by then).
+    /// </summary>
+    public async Task<SmtpEmailSender> ReadyAsync(CancellationToken ct) =>
+        _services is null ? this : new SmtpEmailSender(_email, await PasswordAsync(ct));
+
+    private async Task<string?> PasswordAsync(CancellationToken ct)
+    {
+        var password = _email.Smtp!.Password;
+        if (string.IsNullOrEmpty(password) && _services?.GetService(typeof(Winche.Secrets.SecretStore)) is Winche.Secrets.SecretStore secrets && secrets.Available)
             password = await secrets.GetAsync(SecretName, ct);
-        await SendAsync(smtp, _email.AppName, password, message, ct);
+        return password;
     }
 
     /// <summary>Sends a short test message through <paramref name="smtp"/> (the console's Send test email).</summary>

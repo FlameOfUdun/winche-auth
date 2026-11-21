@@ -39,7 +39,7 @@ public sealed record WincheAuthSettings
         {
             Enabled = true, AppName = e.AppName, ActionUrl = e.ActionUrl, SendVerificationOnSignUp = e.SendVerificationOnSignUp,
             MaxPerAddressPerHour = e.MaxPerAddressPerHour, VerifyLinkHours = (int)e.VerifyLinkLifetime.TotalHours, ResetLinkHours = (int)e.ResetLinkLifetime.TotalHours,
-            Sender = e.LogLinksOnly ? "logLinks" : e.Smtp is not null ? "smtp" : "app",
+            Sender = e.LogLinksOnly ? "logLinks" : e.Smtp is not null ? "smtp" : "app", SendInBackground = e.SendInBackground,
             Smtp = e.Smtp is { } s ? new() { Host = s.Host, Port = s.Port, Security = s.Security, Username = s.Username, FromAddress = s.FromAddress, FromName = s.FromName } : null,
         } : new(),
     };
@@ -96,7 +96,7 @@ public sealed record WincheAuthSettings
             SendVerificationOnSignUp = Email.SendVerificationOnSignUp, MaxPerAddressPerHour = Email.MaxPerAddressPerHour,
             VerifyLinkLifetime = TimeSpan.FromHours(Email.VerifyLinkHours), ResetLinkLifetime = TimeSpan.FromHours(Email.ResetLinkHours),
             SignInLinkLifetime = code.SignInLinkLifetime, UndoLinkLifetime = code.UndoLinkLifetime,
-            LogLinksOnly = Email.Sender == "logLinks",
+            LogLinksOnly = Email.Sender == "logLinks", SendInBackground = Email.SendInBackground,
             Smtp = Email.Sender == "smtp" && Email.Smtp is { } s ? new SmtpOptions
             {
                 Host = s.Host, Port = s.Port, Security = s.Security, Username = string.IsNullOrWhiteSpace(s.Username) ? null : s.Username,
@@ -236,6 +236,8 @@ public sealed record EmailSettings
     /// <summary>app (the app's IAuthEmailSender), smtp, or logLinks (local only).</summary>
     public string Sender { get; init; } = "app";
     public SmtpSettings? Smtp { get; init; }
+    /// <summary>Send sign-in-link and password-reset emails after answering (default), so how long the answer takes doesn't tell whether the address has an account.</summary>
+    public bool SendInBackground { get; init; } = true;
 }
 
 public sealed record SmtpSettings
