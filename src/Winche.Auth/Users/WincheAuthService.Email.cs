@@ -148,6 +148,9 @@ internal sealed partial class WincheAuthService
         return await InTransaction(async () =>
         {
         await SecureClaimedAccountAsync(user, "reset its password", ct);
+        // Read again under the lock: the address or the account may have changed since the code was checked.
+        if (!string.Equals(user.Email, row.Email, StringComparison.OrdinalIgnoreCase)) throw InvalidCode();
+        if (user.Disabled) throw Disabled();
         if (user.PasswordHash is not null)
         {
             var removed = await users.RemovePasswordAsync(user);
@@ -223,6 +226,7 @@ internal sealed partial class WincheAuthService
         await InTransaction(async () =>
         {
             await SecureClaimedAccountAsync(user, "signed in with an email link", ct);
+            if (user.Disabled) throw Disabled();   // read again under the lock
             user.EmailConfirmed = true;
             await UseAsync(row, ct);
         }, ct);

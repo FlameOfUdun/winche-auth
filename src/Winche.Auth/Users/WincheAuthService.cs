@@ -562,7 +562,7 @@ internal sealed partial class WincheAuthService(
             var unlinked = await users.RemoveLoginAsync(user, login.LoginProvider, login.ProviderKey);
             if (!unlinked.Succeeded) throw Failed(unlinked);
         }
-        if (user.TwoFactorEnabled) await ClearMfaAsync(user);
+        await ClearMfaAsync(user);   // a set-up only begun goes too: whoever began it can't finish it later
         await sessions.RevokeAllAsync(user.Id, "email proven by its owner", ct);
         await Save(user);
         await Record(WincheAuthUserEvent.Updated, await InfoAsync(user), ct);   // observers drop the name and photo too

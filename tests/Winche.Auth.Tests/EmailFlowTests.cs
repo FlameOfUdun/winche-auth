@@ -87,6 +87,10 @@ public class EmailFlowTests(PostgresFixture pg)
         Assert.Equal((null, null, null), (owned.DisplayName, owned.PhotoUrl, owned.PhotoSource));
         // The other person's access token (its session ended) can't put them back.
         Assert.Equal(401, (await TestApp.Error(await app.SendAsync(HttpMethod.Patch, "/auth/v1/me", s.AccessToken, new { displayName = "Not Ann" }))).Item1);
+        // …nor turn on two-step sign-in with their own authenticator, nor delete the account.
+        Assert.Equal(401, (await TestApp.Error(await app.PostAsync("/auth/v1/me/mfa/totp/confirm", new { code = "123456" }, s.AccessToken))).Item1);
+        Assert.Equal(401, (await TestApp.Error(await app.SendAsync(HttpMethod.Delete, "/auth/v1/me", s.AccessToken))).Item1);
+        Assert.NotNull(await app.Scoped(a => a.GetUserAsync(s.Uid)));
         await app.SessionAsync(await app.PostAsync("/auth/v1/signIn", new { email = "ann@example.com", password = "a brand new password" }));
     }
 
@@ -142,7 +146,9 @@ public class EmailFlowTests(PostgresFixture pg)
         Assert.Equal("ann@example.com", (await TestApp.Json(await app.SendAsync(HttpMethod.Get, "/auth/v1/me", s.AccessToken))).GetProperty("email").GetString());
 
         await TestApp.Json(await Apply(app, Outbox.Code(confirm)));
-        Assert.Equal("ann.new@example.com", (await TestApp.Json(await app.SendAsync(HttpMethod.Get, "/auth/v1/me", s.AccessToken))).GetProperty("email").GetString());
+        Assert.Equal("ann.new@example.com", (await app.Scoped(a => a.GetUserAsync(s.Uid)))!.Email);
+        // The account was never verified: proving an address claims it, and its sessions end (tokens included).
+        Assert.Equal(401, (int)(await app.SendAsync(HttpMethod.Get, "/auth/v1/me", s.AccessToken)).StatusCode);
         var notice = outbox.Last("ann@example.com");
         Assert.Equal("emailChanged", notice.Kind);
         Assert.Contains("from ann@example.com to ann.new@example.com", notice.Text);
