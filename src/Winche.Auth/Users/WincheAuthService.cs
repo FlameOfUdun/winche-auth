@@ -363,6 +363,10 @@ internal sealed partial class WincheAuthService(
             var user = await Find(uid);
             if (patch.SetDisplayName) user.DisplayName = Clean(patch.DisplayName, 100);
             var url = patch.SetPhotoUrl ? Clean(patch.PhotoUrl, 2000) : options.PhotoUrlOf(user);
+            // The uploaded photo's own address, even one from before the server moved (an app's cached copy): unchanged.
+            if (user is { PhotoSource: "upload", PhotoUrl: { } stored } && url is not null
+                && url.EndsWith("/photos/" + stored[(stored.LastIndexOf('/') + 1)..], StringComparison.Ordinal))
+                url = options.PhotoUrlOf(user);
             if (url != options.PhotoUrlOf(user))
             {
                 // A new link (or none) replaces an uploaded photo, and a provider's no longer follows sign-ins.

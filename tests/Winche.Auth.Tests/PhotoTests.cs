@@ -96,6 +96,12 @@ public class PhotoTests(PostgresFixture pg)
         // Sent back as it came (a form with both fields): still the upload.
         var same = await TestApp.Json(await app.SendAsync(HttpMethod.Patch, "/auth/v1/me", ann.AccessToken, new { displayName = "Ann", photoUrl = photo }));
         Assert.Equal("upload", same.GetProperty("photoSource").GetString());
+        // Field names in any case, as before.
+        Assert.Equal("Ann Upper", (await TestApp.Json(await app.SendAsync(HttpMethod.Patch, "/auth/v1/me", ann.AccessToken, new { DisplayName = "Ann Upper" }))).GetProperty("displayName").GetString());
+        await app.SendAsync(HttpMethod.Patch, "/auth/v1/me", ann.AccessToken, new { displayName = "Ann" });
+        // An app's cached copy of the upload's address from before the server moved: still the upload.
+        var moved = "https://old.example.com/auth/v1/photos/" + photo!.Split('/')[^1];
+        Assert.Equal("upload", (await TestApp.Json(await app.SendAsync(HttpMethod.Patch, "/auth/v1/me", ann.AccessToken, new { photoUrl = moved }))).GetProperty("photoSource").GetString());
         // An explicit null clears it.
         var cleared = await TestApp.Json(await app.SendAsync(HttpMethod.Patch, "/auth/v1/me", ann.AccessToken, new { photoUrl = (string?)null }));
         Assert.Equal(System.Text.Json.JsonValueKind.Null, cleared.GetProperty("photoUrl").ValueKind);

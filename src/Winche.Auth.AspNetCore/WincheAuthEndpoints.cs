@@ -374,9 +374,12 @@ public static class WincheAuthEndpoints
     /// </summary>
     public static ProfilePatch? PatchOf(System.Text.Json.Nodes.JsonObject body)
     {
+        // Field names in any case (displayName, DisplayName), as the body binding before 2.1 took them.
         static bool Read(System.Text.Json.Nodes.JsonObject body, string name, out bool set, out string? value)
         {
-            set = body.TryGetPropertyValue(name, out var node);
+            var found = body.FirstOrDefault(p => string.Equals(p.Key, name, StringComparison.OrdinalIgnoreCase));
+            set = found.Key is not null;
+            var node = found.Value;
             value = null;
             if (!set || node is null) return true;
             return node is System.Text.Json.Nodes.JsonValue v && v.TryGetValue(out value);
