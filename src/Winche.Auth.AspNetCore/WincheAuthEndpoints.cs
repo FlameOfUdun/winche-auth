@@ -242,7 +242,7 @@ public static class WincheAuthEndpoints
             await Me(http) is { } uid && await auth.GetUserAsync(uid, ct) is { } user ? Results.Json(User(user)) : Unauthorized());
         group.MapPatch("/me", async (HttpContext http, IWincheAuth auth, CancellationToken ct) =>
         {
-            if (await Me(http) is not { } uid) return Unauthorized();
+            if (await MeLive(http) is not { } uid) return Unauthorized();
             await Limit(http, "profile", 30);
             // A patch: what's left out stays as it is (only an explicit null clears it).
             if (await ReadPatchAsync(http.Request, ct) is not { } body || PatchOf(body) is not { } patch)
@@ -258,7 +258,7 @@ public static class WincheAuthEndpoints
         // The signed-in user's photo: the image itself as the body (JPEG, PNG or WebP, at most 100 KB), or removed.
         group.MapPost("/me/photo", async (HttpContext http, IWincheAuth auth, CancellationToken ct) =>
         {
-            if (await Me(http) is not { } uid) return Unauthorized();
+            if (await MeLive(http) is not { } uid) return Unauthorized();
             await Limit(http, "profile", 30);
             if (await ReadPhotoAsync(http.Request, ct) is not { } image)
                 return Send(new WincheError(WincheErrorCode.InvalidArgument, $"Send the photo as the request's body, at most {WincheAuthLimits.MaxPhotoBytes / 1024} KB."));
@@ -266,7 +266,7 @@ public static class WincheAuthEndpoints
         });
         group.MapDelete("/me/photo", async (HttpContext http, IWincheAuth auth, CancellationToken ct) =>
         {
-            if (await Me(http) is not { } uid) return Unauthorized();
+            if (await MeLive(http) is not { } uid) return Unauthorized();
             await Limit(http, "profile", 30);
             return Results.Json(User(await auth.RemovePhotoAsync(uid, ct)));
         });
@@ -306,6 +306,18 @@ public static class WincheAuthEndpoints
         var result = await http.AuthenticateAsync(WincheAuthDefaults.OwnScheme);
         if (!result.Succeeded) return null;
         return http.Items[WincheAuthDefaults.ClaimsItem] is IReadOnlyDictionary<string, object?> c ? c.GetValueOrDefault("uid") as string : null;
+    }
+
+    /// <summary>
+    /// As <see cref="Me"/>, and the token's session still stands: changing what others see of the user (name, photo)
+    /// isn't left to a token whose session was ended (its owner proved the email, signed out everywhere).
+    /// </summary>
+    private static async Task<string?> MeLive(HttpContext http)
+    {
+        if (await Me(http) is not { } uid) return null;
+        var claims = http.Items[WincheAuthDefaults.ClaimsItem] as IReadOnlyDictionary<string, object?>;
+        if (claims?.GetValueOrDefault("sid") is not string sid || !Guid.TryParseExact(sid, "N", out var session)) return uid;   // tokens from before sessions: as before
+        return await http.RequestServices.GetRequiredService<Winche.Auth.Sessions.SessionStore>().IsActiveAsync(uid, session, http.RequestAborted) ? uid : null;
     }
 
     /// <summary>How recent a sign-in the sensitive actions need (changing the email, deleting the account, …).</summary>

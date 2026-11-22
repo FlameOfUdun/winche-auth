@@ -85,6 +85,8 @@ public class EmailFlowTests(PostgresFixture pg)
         // The address's owner proved it: the name and photo the other person set are gone too.
         var owned = (await app.Scoped(a => a.GetUserAsync(s.Uid)))!;
         Assert.Equal((null, null, null), (owned.DisplayName, owned.PhotoUrl, owned.PhotoSource));
+        // The other person's access token (its session ended) can't put them back.
+        Assert.Equal(401, (await TestApp.Error(await app.SendAsync(HttpMethod.Patch, "/auth/v1/me", s.AccessToken, new { displayName = "Not Ann" }))).Item1);
         await app.SessionAsync(await app.PostAsync("/auth/v1/signIn", new { email = "ann@example.com", password = "a brand new password" }));
     }
 

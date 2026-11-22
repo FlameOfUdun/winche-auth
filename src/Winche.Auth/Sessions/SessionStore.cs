@@ -108,6 +108,13 @@ internal sealed class SessionStore(WincheAuthDbContext db, WincheAuthOptions opt
             .ExecuteUpdateAsync(u => u.SetProperty(s => s.RevokedAt, now).SetProperty(s => s.RevokedReason, "revoked"), ct) > 0;
     }
 
+    /// <summary>Whether <paramref name="sessionId"/> of <paramref name="userId"/> still stands (not ended, not expired).</summary>
+    public Task<bool> IsActiveAsync(string userId, Guid sessionId, CancellationToken ct)
+    {
+        var now = time.GetUtcNow();
+        return db.Sessions.AsNoTracking().AnyAsync(s => s.Id == sessionId && s.UserId == userId && s.RevokedAt == null && s.ExpiresAt > now, ct);
+    }
+
     public async Task<IReadOnlyList<SessionInfo>> ActiveAsync(string userId, CancellationToken ct)
     {
         var now = time.GetUtcNow();

@@ -540,6 +540,9 @@ internal sealed partial class WincheAuthService(
     /// </summary>
     private async Task SecureClaimedAccountAsync(WincheUser user, string how, CancellationToken ct)
     {
+        // The user's row first, as profile and photo changes take it, then fresh: what was read before the lock may be old.
+        await LockUser(user.Id, ct);
+        await db.Entry(user).ReloadAsync(ct);
         if (user.EmailConfirmed) return;
         var logins = await users.GetLoginsAsync(user);
         if (user.PasswordHash is null && logins.Count == 0 && !user.TwoFactorEnabled) return;
