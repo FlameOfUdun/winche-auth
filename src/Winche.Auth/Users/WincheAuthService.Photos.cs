@@ -14,6 +14,7 @@ internal sealed partial class WincheAuthService
             throw new AuthException(AuthErrorCodes.InvalidArgument, $"A photo is at most {WincheAuthLimits.MaxPhotoBytes / 1024} KB: shrink it first (256 × 256 is plenty).");
         return InTransaction(async () =>
         {
+            await LockUser(uid, ct);   // two uploads at once take turns (the user's concurrency stamp would refuse the second)
             var user = await Find(uid);
             var id = Convert.ToBase64String(RandomNumberGenerator.GetBytes(18)).Replace('+', '-').Replace('/', '_');
             // One row per user, written in one statement: two uploads at once take turns (the last wins), never fail.
@@ -34,6 +35,7 @@ internal sealed partial class WincheAuthService
 
     public Task<WincheUserInfo> RemovePhotoAsync(string uid, CancellationToken ct) => InTransaction(async () =>
     {
+        await LockUser(uid, ct);
         var user = await Find(uid);
         var changed = await db.Photos.Where(p => p.UserId == uid).ExecuteDeleteAsync(ct) > 0;
         if (user.PhotoSource == "upload")
@@ -54,6 +56,13 @@ internal sealed partial class WincheAuthService
         return await db.Photos.AsNoTracking().Where(p => p.PhotoId == photoId)
             .Select(p => new UserPhoto(p.Bytes, p.ContentType, p.UpdatedAt)).FirstOrDefaultAsync(ct);
     }
+
+    /// <summary>
+    /// Holds the user's row until the transaction ends, so changes to their profile and photo made at once take turns
+    /// (call before loading the user).
+    /// </summary>
+    private Task LockUser(string uid, CancellationToken ct) =>
+        db.Database.ExecuteSqlInterpolatedAsync($"""SELECT 1 FROM auth_users WHERE "Id" = {uid} FOR UPDATE""", ct);
 
     /// <summary>The image's type from its first bytes (never from what the uploader says): JPEG, PNG or WebP, else null.</summary>
     internal static string? PhotoType(ReadOnlySpan<byte> b) =>

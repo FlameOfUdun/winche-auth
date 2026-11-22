@@ -25,6 +25,19 @@ public sealed record WincheUserInfo(
 public sealed record UserPhoto(byte[] Bytes, string ContentType, DateTimeOffset UpdatedAt);
 
 /// <summary>Winche Auth's fixed limits.</summary>
+/// <summary>
+/// A change to the name and photo link shown for a user: only the fields set (<see cref="SetDisplayName"/>,
+/// <see cref="SetPhotoUrl"/>) change; a set field that's null or empty clears it.
+/// </summary>
+public sealed record ProfilePatch(bool SetDisplayName, string? DisplayName, bool SetPhotoUrl, string? PhotoUrl)
+{
+    /// <summary>The name only.</summary>
+    public static ProfilePatch Name(string? displayName) => new(true, displayName, false, null);
+
+    /// <summary>The photo link only.</summary>
+    public static ProfilePatch Photo(string? photoUrl) => new(false, null, true, photoUrl);
+}
+
 public static class WincheAuthLimits
 {
     /// <summary>The largest photo kept: 100 KB.</summary>

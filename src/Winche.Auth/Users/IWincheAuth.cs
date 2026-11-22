@@ -61,6 +61,11 @@ public interface IWincheAuth
     /// </summary>
     Task<WincheUserInfo> UpdateProfileAsync(string uid, string? displayName, string? photoUrl, CancellationToken ct = default);
     /// <summary>
+    /// Changes only what <paramref name="patch"/> sets of the name and photo link, read and written in one transaction
+    /// (an upload made meanwhile isn't lost to a rename).
+    /// </summary>
+    Task<WincheUserInfo> PatchProfileAsync(string uid, ProfilePatch patch, CancellationToken ct = default);
+    /// <summary>
     /// Keeps <paramref name="image"/> as the user's photo (JPEG, PNG or WebP, at most <see cref="WincheAuthLimits.MaxPhotoBytes"/>:
     /// shrink it first, 256 × 256 is plenty) and points <c>photoUrl</c> at it (<c>/auth/v1/photos/{id}</c>, a new id each time).
     /// </summary>

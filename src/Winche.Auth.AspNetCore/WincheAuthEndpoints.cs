@@ -246,11 +246,9 @@ public static class WincheAuthEndpoints
             if (await Me(http) is not { } uid) return Unauthorized();
             await Limit(http, "profile", 30);
             // A patch: what's left out stays as it is (only an explicit null clears it).
-            if (await ReadPatchAsync(http.Request, ct) is not { } body)
-                return Send(new WincheError(WincheErrorCode.InvalidArgument, "Send a JSON object: displayName and/or photoUrl."));
-            var current = await auth.GetUserAsync(uid, ct) ?? throw new AuthException(AuthErrorCodes.UserNotFound, "The account is gone.");
-            var (name, photo) = PatchOf(body, current);
-            return Results.Json(User(await auth.UpdateProfileAsync(uid, name, photo, ct)));
+            if (await ReadPatchAsync(http.Request, ct) is not { } body || PatchOf(body) is not { } patch)
+                return Send(new WincheError(WincheErrorCode.InvalidArgument, "Send a JSON object: displayName and/or photoUrl, each text or null."));
+            return Results.Json(User(await auth.PatchProfileAsync(uid, patch, ct)));
         });
         group.MapPost("/me/password", async (PasswordRequest body, HttpContext http, IWincheAuth auth, CancellationToken ct) =>
         {
@@ -362,7 +360,6 @@ public static class WincheAuthEndpoints
         isAnonymous = u.IsAnonymous, mfaEnabled = u.MfaEnabled, providers = u.Providers, customClaims = u.CustomClaims, createdAt = u.CreatedAt, lastSignInAt = u.LastSignInAt,
     };
 
-    /// <summary>A request's body as a photo, or null when it's empty or over the limit.</summary>
     /// <summary>A PATCH body as a JSON object, or null when it isn't one.</summary>
     public static async Task<System.Text.Json.Nodes.JsonObject?> ReadPatchAsync(HttpRequest request, CancellationToken ct)
     {
@@ -371,16 +368,24 @@ public static class WincheAuthEndpoints
     }
 
     /// <summary>
-    /// A profile patch on top of <paramref name="current"/>: <c>displayName</c> and <c>photoUrl</c> as sent, and what
-    /// was left out as it is (an uploaded photo stays).
+    /// A profile patch from a PATCH body: <c>displayName</c> and <c>photoUrl</c> when present (text, or null to clear),
+    /// what's left out unchanged. Null when a field is there with another type (a number, an object): refused, never
+    /// taken for "clear".
     /// </summary>
-    public static (string? DisplayName, string? PhotoUrl) PatchOf(System.Text.Json.Nodes.JsonObject body, WincheUserInfo current)
+    public static ProfilePatch? PatchOf(System.Text.Json.Nodes.JsonObject body)
     {
-        static string? Text(System.Text.Json.Nodes.JsonNode? n) => n is System.Text.Json.Nodes.JsonValue v && v.TryGetValue<string>(out var s) ? s : null;
-        return (body.TryGetPropertyValue("displayName", out var name) ? Text(name) : current.DisplayName,
-            body.TryGetPropertyValue("photoUrl", out var photo) ? Text(photo) : current.PhotoUrl);
+        static bool Read(System.Text.Json.Nodes.JsonObject body, string name, out bool set, out string? value)
+        {
+            set = body.TryGetPropertyValue(name, out var node);
+            value = null;
+            if (!set || node is null) return true;
+            return node is System.Text.Json.Nodes.JsonValue v && v.TryGetValue(out value);
+        }
+        return Read(body, "displayName", out var setName, out var name) && Read(body, "photoUrl", out var setPhoto, out var photo)
+            ? new ProfilePatch(setName, name, setPhoto, photo) : null;
     }
 
+    /// <summary>A request's body as a photo, or null when it's empty or over the limit.</summary>
     public static async Task<byte[]?> ReadPhotoAsync(HttpRequest request, CancellationToken ct)
     {
         if (request.ContentLength is > WincheAuthLimits.MaxPhotoBytes) return null;

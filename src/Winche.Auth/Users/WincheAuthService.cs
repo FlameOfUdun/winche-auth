@@ -350,15 +350,19 @@ internal sealed partial class WincheAuthService(
         return await InfoAsync(user);
     }
 
-    public Task<WincheUserInfo> UpdateProfileAsync(string uid, string? displayName, string? photoUrl, CancellationToken ct)
+    public Task<WincheUserInfo> UpdateProfileAsync(string uid, string? displayName, string? photoUrl, CancellationToken ct) =>
+        PatchProfileAsync(uid, new ProfilePatch(true, displayName, true, photoUrl), ct);
+
+    public Task<WincheUserInfo> PatchProfileAsync(string uid, ProfilePatch patch, CancellationToken ct)
     {
-        if (photoUrl is { Length: > 0 } && !(Uri.TryCreate(photoUrl, UriKind.Absolute, out var url) && url.Scheme is "https" or "http"))
+        if (patch is { SetPhotoUrl: true, PhotoUrl: { Length: > 0 } photoUrl } && !(Uri.TryCreate(photoUrl, UriKind.Absolute, out var url) && url.Scheme is "https" or "http"))
             throw new AuthException(AuthErrorCodes.InvalidArgument, "photoUrl must be an http(s) URL.");
         return InTransaction(async () =>
         {
+            await LockUser(uid, ct);
             var user = await Find(uid);
-            user.DisplayName = Clean(displayName, 100);
-            var url = Clean(photoUrl, 2000);
+            if (patch.SetDisplayName) user.DisplayName = Clean(patch.DisplayName, 100);
+            var url = patch.SetPhotoUrl ? Clean(patch.PhotoUrl, 2000) : options.PhotoUrlOf(user);
             if (url != options.PhotoUrlOf(user))
             {
                 // A new link (or none) replaces an uploaded photo, and a provider's no longer follows sign-ins.

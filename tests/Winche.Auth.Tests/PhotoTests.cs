@@ -101,8 +101,14 @@ public class PhotoTests(PostgresFixture pg)
         Assert.Equal(System.Text.Json.JsonValueKind.Null, cleared.GetProperty("photoUrl").ValueKind);
         Assert.Equal("Ann", cleared.GetProperty("displayName").GetString());
 
-        var both = await Task.WhenAll(Upload(app, ann.AccessToken, Png), Upload(app, ann.AccessToken, Jpeg));
+        var both = await Task.WhenAll(Upload(app, ann.AccessToken, Png), Upload(app, ann.AccessToken, Jpeg), Upload(app, ann.AccessToken, Png));
         Assert.All(both, r => Assert.Equal(HttpStatusCode.OK, r.StatusCode));
+
+        // Anything but text or null for a field is refused (never taken for "clear"); so is a body that isn't an object.
+        var photoNow = (await TestApp.Json(await app.SendAsync(HttpMethod.Get, "/auth/v1/me", ann.AccessToken))).GetProperty("photoUrl").GetString();
+        foreach (var bad in new object[] { new { photoUrl = 5 }, new { displayName = new { } }, new[] { 1, 2 }, "text" })
+            Assert.Equal(400, (await TestApp.Error(await app.SendAsync(HttpMethod.Patch, "/auth/v1/me", ann.AccessToken, bad))).Item1);
+        Assert.Equal(photoNow, (await TestApp.Json(await app.SendAsync(HttpMethod.Get, "/auth/v1/me", ann.AccessToken))).GetProperty("photoUrl").GetString());
     }
 
     [Fact]

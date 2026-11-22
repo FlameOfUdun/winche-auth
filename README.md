@@ -409,7 +409,9 @@ unhealthy without the database or a signing key, and degraded when user events f
 - Photos (above): `POST me/photo`, `DELETE me/photo`, `GET photos/{id}`; `SetPhotoAsync`, `RemovePhotoAsync`,
   `GetPhotoAsync`; `photoSource` on users. A provider's picture is now refreshed at sign-in while it's the user's photo,
   and goes when the provider is unlinked.
-- `PATCH me` is a patch: a field left out stays as it is (before, a missing `photoUrl` cleared the photo).
+- `PATCH me` is a patch: a field left out stays as it is (before, a missing `photoUrl` cleared the photo); a field that
+  isn't text or null is refused. From code, `PatchProfileAsync(uid, ProfilePatch.Name("Ann"))` changes only what it
+  sets, read and written together.
   A migration adds `auth_user_photos` and a column (by itself, at start).
 
 ## 2.0.1
