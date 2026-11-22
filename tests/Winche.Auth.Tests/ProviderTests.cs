@@ -73,6 +73,13 @@ public class ProviderTests(PostgresFixture pg)
         await SignIn("https://lh3.example.com/ann-4.png");
         Assert.Equal(("https://lh3.example.com/ann-4.png", "provider:google"), ((await app.Scoped(a => a.GetUserAsync(first.Uid)))!.PhotoUrl, (await app.Scoped(a => a.GetUserAsync(first.Uid)))!.PhotoSource));
 
+        // Unlinking Google takes its picture with it.
+        var bob = await app.SignUpAsync("bob@example.com");
+        Assert.Equal(System.Net.HttpStatusCode.OK, (await app.PostAsync("/auth/v1/link/idp", Idp("google", Google("g-bob", picture: "https://lh3.example.com/bob.png")), bob.AccessToken)).StatusCode);
+        Assert.Equal("provider:google", (await app.Scoped(a => a.GetUserAsync(bob.Uid)))!.PhotoSource);
+        var unlinked = await app.Scoped(a => a.UnlinkProviderAsync(bob.Uid, "google"));
+        Assert.Equal((null, null), (unlinked.PhotoUrl, unlinked.PhotoSource));
+
         // A link set by an admin (or the app) wins too.
         await app.Scoped(a => a.UpdateProfileAsync(first.Uid, "Ann", "https://cdn.example.com/ann.jpg"));
         await SignIn("https://lh3.example.com/ann-5.png");

@@ -41,6 +41,7 @@ internal sealed partial class WincheAuthService
                     await users.SetAuthenticationTokenAsync(user, SyncMarker, DisabledBy, provider.Name);
                     changes.Add("disabled");
                 }
+                ForgetProviderPhoto(user, provider.Name);
                 var removed = await users.RemoveLoginAsync(user, provider.Name, subject);
                 if (!removed.Succeeded) throw Failed(removed);
                 changes.Add($"unlinked from {source}");

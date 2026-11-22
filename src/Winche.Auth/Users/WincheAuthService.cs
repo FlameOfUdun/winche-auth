@@ -300,7 +300,7 @@ internal sealed partial class WincheAuthService(
         var ids = page.Select(u => u.Id).ToList();
         var logins = (await db.UserLogins.AsNoTracking().Where(l => ids.Contains(l.UserId)).Select(l => new { l.UserId, l.LoginProvider }).ToListAsync(ct))
             .ToLookup(l => l.UserId, l => l.LoginProvider);
-        return new UserPage([.. page.Select(u => WincheUserInfo.From(u, time.GetUtcNow(), [.. logins[u.Id]]))], total);
+        return new UserPage([.. page.Select(u => WincheUserInfo.From(u, time.GetUtcNow(), [.. logins[u.Id]], options))], total);
     }
 
     public async Task<UserListPage> ListUsersPageAsync(string? pageToken, int pageSize, CancellationToken ct)
@@ -326,7 +326,7 @@ internal sealed partial class WincheAuthService(
         var logins = (await db.UserLogins.AsNoTracking().Where(l => ids.Contains(l.UserId)).Select(l => new { l.UserId, l.LoginProvider }).ToListAsync(ct))
             .ToLookup(l => l.UserId, l => l.LoginProvider);
         var next = more ? Base64UrlEncoder.Encode(System.Text.Encoding.UTF8.GetBytes($"{page[^1].CreatedAt.UtcTicks}|{page[^1].Id}")) : null;
-        return new UserListPage([.. page.Select(u => WincheUserInfo.From(u, time.GetUtcNow(), [.. logins[u.Id]]))], next);
+        return new UserListPage([.. page.Select(u => WincheUserInfo.From(u, time.GetUtcNow(), [.. logins[u.Id]], options))], next);
     }
 
     public async Task<WincheUserInfo> CreateUserAsync(string? email, string? password, string? displayName, CancellationToken ct)
@@ -359,7 +359,7 @@ internal sealed partial class WincheAuthService(
             var user = await Find(uid);
             user.DisplayName = Clean(displayName, 100);
             var url = Clean(photoUrl, 2000);
-            if (url != user.PhotoUrl)
+            if (url != options.PhotoUrlOf(user))
             {
                 // A new link (or none) replaces an uploaded photo, and a provider's no longer follows sign-ins.
                 if (await db.Photos.FindAsync([uid], ct) is { } kept) db.Photos.Remove(kept);
@@ -542,6 +542,7 @@ internal sealed partial class WincheAuthService(
         }
         foreach (var login in logins)
         {
+            ForgetProviderPhoto(user, login.LoginProvider);
             var unlinked = await users.RemoveLoginAsync(user, login.LoginProvider, login.ProviderKey);
             if (!unlinked.Succeeded) throw Failed(unlinked);
         }
@@ -566,7 +567,7 @@ internal sealed partial class WincheAuthService(
     internal static string NewUid() => RandomNumberGenerator.GetString("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", 28);
 
     private async Task<WincheUserInfo> InfoAsync(WincheUser u) =>
-        WincheUserInfo.From(u, time.GetUtcNow(), await db.UserLogins.AsNoTracking().Where(l => l.UserId == u.Id).Select(l => l.LoginProvider).ToListAsync());
+        WincheUserInfo.From(u, time.GetUtcNow(), await db.UserLogins.AsNoTracking().Where(l => l.UserId == u.Id).Select(l => l.LoginProvider).ToListAsync(), options);
 
     private void RequireEmailPassword()
     {

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Winche.Auth.Tests;
 
@@ -34,7 +35,7 @@ public class PhotoTests(PostgresFixture pg)
         Assert.Equal(HttpStatusCode.OK, served.StatusCode);
         Assert.Equal("image/png", served.Content.Headers.ContentType?.MediaType);
         Assert.Equal(Png, await served.Content.ReadAsByteArrayAsync());
-        Assert.Contains("immutable", served.Headers.CacheControl?.ToString());
+        Assert.Equal(TimeSpan.FromDays(1), served.Headers.CacheControl?.MaxAge);   // a removed photo doesn't linger
         Assert.Equal("nosniff", served.Headers.GetValues("X-Content-Type-Options").Single());
         Assert.Equal(HttpStatusCode.NotFound, (await app.Client.GetAsync("/auth/v1/photos/nope")).StatusCode);
 
@@ -81,5 +82,39 @@ public class PhotoTests(PostgresFixture pg)
         path = new Uri((await TestApp.Json(await Upload(app, ann.AccessToken, Png))).GetProperty("photoUrl").GetString()!).AbsolutePath;
         await app.Scoped(async a => { await a.DeleteUserAsync(ann.Uid); return true; });
         Assert.Equal(HttpStatusCode.NotFound, (await app.Client.GetAsync(path)).StatusCode);
+    }
+
+    [Fact]
+    public async Task A_profile_patch_leaves_what_it_doesnt_mention_and_two_uploads_at_once_both_work()
+    {
+        await using var app = await TestApp.StartAsync(await pg.NewDatabaseAsync());
+        var ann = await app.SignUpAsync("ann@example.com");
+        var photo = (await TestApp.Json(await Upload(app, ann.AccessToken, Png))).GetProperty("photoUrl").GetString();
+        var renamed = await TestApp.Json(await app.SendAsync(HttpMethod.Patch, "/auth/v1/me", ann.AccessToken, new { displayName = "Ann K" }));
+        Assert.Equal(("Ann K", photo), (renamed.GetProperty("displayName").GetString(), renamed.GetProperty("photoUrl").GetString()));
+        Assert.Equal(HttpStatusCode.OK, (await app.Client.GetAsync(new Uri(photo!).AbsolutePath)).StatusCode);
+        // Sent back as it came (a form with both fields): still the upload.
+        var same = await TestApp.Json(await app.SendAsync(HttpMethod.Patch, "/auth/v1/me", ann.AccessToken, new { displayName = "Ann", photoUrl = photo }));
+        Assert.Equal("upload", same.GetProperty("photoSource").GetString());
+        // An explicit null clears it.
+        var cleared = await TestApp.Json(await app.SendAsync(HttpMethod.Patch, "/auth/v1/me", ann.AccessToken, new { photoUrl = (string?)null }));
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, cleared.GetProperty("photoUrl").ValueKind);
+        Assert.Equal("Ann", cleared.GetProperty("displayName").GetString());
+
+        var both = await Task.WhenAll(Upload(app, ann.AccessToken, Png), Upload(app, ann.AccessToken, Jpeg));
+        Assert.All(both, r => Assert.Equal(HttpStatusCode.OK, r.StatusCode));
+    }
+
+    [Fact]
+    public async Task An_uploaded_photos_address_follows_the_servers_address()
+    {
+        await using var app = await TestApp.StartAsync(await pg.NewDatabaseAsync());
+        var ann = await app.SignUpAsync("ann@example.com");
+        var id = (await TestApp.Json(await Upload(app, ann.AccessToken, Png))).GetProperty("photoUrl").GetString()!.Split('/')[^1];
+        var options = app.Service<WincheAuthOptions>();
+        var before = options.Issuer;
+        options.Issuer = "https://new.example.com";
+        try { Assert.Equal($"https://new.example.com/auth/v1/photos/{id}", (await app.Scoped(a => a.GetUserAsync(ann.Uid)))!.PhotoUrl); }
+        finally { options.Issuer = before; }
     }
 }

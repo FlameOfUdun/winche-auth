@@ -12,6 +12,20 @@ public sealed class WincheAuthOptions
     /// </summary>
     public string Issuer { get; set; } = "";
 
+    /// <summary>Where uploaded photos are served, under the issuer: set by MapWincheAuth from its prefix.</summary>
+    internal string PhotosPath { get; set; } = "/auth/v1/photos";
+
+    /// <summary>An uploaded photo's address, from today's issuer and path.</summary>
+    internal string PhotoAddress(string photoId) => $"{Issuer.TrimEnd('/')}{PhotosPath}/{photoId}";
+
+    /// <summary>
+    /// The user's photo address: an uploaded one is rebuilt from its id, so it follows a new issuer or path; any other
+    /// is the link as kept.
+    /// </summary>
+    internal string? PhotoUrlOf(Data.WincheUser u) =>
+        u is { PhotoSource: "upload", PhotoUrl: { } url } && url.LastIndexOf('/') is var i and >= 0 && i < url.Length - 1
+            ? PhotoAddress(url[(i + 1)..]) : u.PhotoUrl;
+
     /// <summary>The token audience (<c>aud</c>); the issuer when not set.</summary>
     public string? Audience { get; set; }
 

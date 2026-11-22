@@ -36,7 +36,7 @@ internal sealed class TokenIssuer(SigningKeyStore keys, WincheAuthOptions option
             claims["email_verified"] = user.EmailConfirmed;
         }
         if (user.DisplayName is not null) claims["name"] = user.DisplayName;
-        if (user.PhotoUrl is not null) claims["picture"] = user.PhotoUrl;
+        if (options.PhotoUrlOf(user) is { } picture) claims["picture"] = picture;
 
         var token = new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = false }.CreateToken(new SecurityTokenDescriptor
         {

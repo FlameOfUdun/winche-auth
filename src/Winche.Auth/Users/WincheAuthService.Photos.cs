@@ -16,15 +16,15 @@ internal sealed partial class WincheAuthService
         {
             var user = await Find(uid);
             var id = Convert.ToBase64String(RandomNumberGenerator.GetBytes(18)).Replace('+', '-').Replace('/', '_');
-            var photo = await db.Photos.FindAsync([uid], ct);
-            if (photo is null) db.Photos.Add(photo = new AuthUserPhoto { UserId = uid });
-            photo.PhotoId = id;
-            photo.ContentType = type;
-            photo.Bytes = image;
-            photo.UpdatedAt = time.GetUtcNow();
-            user.PhotoUrl = $"{options.Issuer.TrimEnd('/')}/auth/v1/photos/{id}";
+            // One row per user, written in one statement: two uploads at once take turns (the last wins), never fail.
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO auth_user_photos ("UserId", "PhotoId", "ContentType", "Bytes", "UpdatedAt")
+                VALUES ({uid}, {id}, {type}, {image}, {time.GetUtcNow()})
+                ON CONFLICT ("UserId") DO UPDATE SET "PhotoId" = EXCLUDED."PhotoId", "ContentType" = EXCLUDED."ContentType",
+                    "Bytes" = EXCLUDED."Bytes", "UpdatedAt" = EXCLUDED."UpdatedAt"
+                """, ct);
+            user.PhotoUrl = options.PhotoAddress(id);
             user.PhotoSource = "upload";
-            await db.SaveChangesAsync(ct);
             await Save(user);
             var info = await InfoAsync(user);
             await Record(WincheAuthUserEvent.Updated, info, ct);
@@ -35,19 +35,16 @@ internal sealed partial class WincheAuthService
     public Task<WincheUserInfo> RemovePhotoAsync(string uid, CancellationToken ct) => InTransaction(async () =>
     {
         var user = await Find(uid);
-        if (await db.Photos.FindAsync([uid], ct) is { } kept)
-        {
-            db.Photos.Remove(kept);
-            await db.SaveChangesAsync(ct);
-        }
+        var changed = await db.Photos.Where(p => p.UserId == uid).ExecuteDeleteAsync(ct) > 0;
         if (user.PhotoSource == "upload")
         {
             user.PhotoUrl = null;
             user.PhotoSource = null;   // a provider's picture comes back at the next sign-in with it
             await Save(user);
+            changed = true;
         }
         var info = await InfoAsync(user);
-        await Record(WincheAuthUserEvent.Updated, info, ct);
+        if (changed) await Record(WincheAuthUserEvent.Updated, info, ct);
         return info;
     }, ct);
 
@@ -64,6 +61,17 @@ internal sealed partial class WincheAuthService
         : b.Length >= 8 && b[..8].SequenceEqual((ReadOnlySpan<byte>)[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) ? "image/png"
         : b.Length >= 12 && b[..4].SequenceEqual("RIFF"u8) && b[8..12].SequenceEqual("WEBP"u8) ? "image/webp"
         : null;
+
+    /// <summary>
+    /// A provider being unlinked: its picture, if it's the user's photo, goes with it (another provider's, at its next
+    /// sign-in, can take its place).
+    /// </summary>
+    private static void ForgetProviderPhoto(WincheUser user, string provider)
+    {
+        if (user.PhotoSource != $"provider:{provider}") return;
+        user.PhotoUrl = null;
+        user.PhotoSource = null;
+    }
 
     /// <summary>
     /// A provider's picture on sign-in: kept while the photo is that provider's (refreshed) or there's none; an upload or a

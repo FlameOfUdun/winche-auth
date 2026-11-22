@@ -44,6 +44,8 @@ public static class WincheAuthEndpoints
         // a proxy: UseForwardedHeaders).
         Task Limit(HttpContext http, string kind, int perMinute) =>
             attempts.CheckAsync(kind, http.Connection.RemoteIpAddress?.ToString(), perMinute, http.RequestAborted);
+        // Uploaded photos' addresses follow the prefix the host maps (and its PathBase, e.g. /projects/<id>).
+        if (app.ServiceProvider.GetService<WincheAuthOptions>() is { } authOptions) authOptions.PhotosPath = $"{prefix.TrimEnd('/')}/photos";
         var group = app.MapGroup(prefix).AddEndpointFilter(async (ctx, next) =>
         {
             try { return await next(ctx); }
@@ -239,11 +241,16 @@ public static class WincheAuthEndpoints
         });
         group.MapGet("/me", async (HttpContext http, IWincheAuth auth, CancellationToken ct) =>
             await Me(http) is { } uid && await auth.GetUserAsync(uid, ct) is { } user ? Results.Json(User(user)) : Unauthorized());
-        group.MapPatch("/me", async (ProfileRequest body, HttpContext http, IWincheAuth auth, CancellationToken ct) =>
+        group.MapPatch("/me", async (HttpContext http, IWincheAuth auth, CancellationToken ct) =>
         {
             if (await Me(http) is not { } uid) return Unauthorized();
             await Limit(http, "profile", 30);
-            return Results.Json(User(await auth.UpdateProfileAsync(uid, body.DisplayName, body.PhotoUrl, ct)));
+            // A patch: what's left out stays as it is (only an explicit null clears it).
+            if (await ReadPatchAsync(http.Request, ct) is not { } body)
+                return Send(new WincheError(WincheErrorCode.InvalidArgument, "Send a JSON object: displayName and/or photoUrl."));
+            var current = await auth.GetUserAsync(uid, ct) ?? throw new AuthException(AuthErrorCodes.UserNotFound, "The account is gone.");
+            var (name, photo) = PatchOf(body, current);
+            return Results.Json(User(await auth.UpdateProfileAsync(uid, name, photo, ct)));
         });
         group.MapPost("/me/password", async (PasswordRequest body, HttpContext http, IWincheAuth auth, CancellationToken ct) =>
         {
@@ -261,13 +268,17 @@ public static class WincheAuthEndpoints
             return Results.Json(User(await auth.SetPhotoAsync(uid, image, ct)));
         });
         group.MapDelete("/me/photo", async (HttpContext http, IWincheAuth auth, CancellationToken ct) =>
-            await Me(http) is { } uid ? Results.Json(User(await auth.RemovePhotoAsync(uid, ct))) : Unauthorized());
-        // Uploaded photos, by their unguessable id: open to anyone with the address (an <img> can't send a token), and never
-        // changing (a new photo has a new id), so cached for good.
+        {
+            if (await Me(http) is not { } uid) return Unauthorized();
+            await Limit(http, "profile", 30);
+            return Results.Json(User(await auth.RemovePhotoAsync(uid, ct)));
+        });
+        // Uploaded photos, by their unguessable id: open to anyone with the address (an <img> can't send a token). A new photo
+        // has a new id, so caches never show an old one; a day's caching keeps a removed one from lingering for long.
         group.MapGet("/photos/{id}", async (string id, HttpContext http, IWincheAuth auth, CancellationToken ct) =>
         {
             if (await auth.GetPhotoAsync(id, ct) is not { } photo) return Results.NotFound();
-            http.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+            http.Response.Headers.CacheControl = "public, max-age=86400";
             http.Response.Headers.XContentTypeOptions = "nosniff";
             http.Response.Headers.ContentSecurityPolicy = "default-src 'none'";
             return Results.Bytes(photo.Bytes, photo.ContentType, lastModified: photo.UpdatedAt);
@@ -352,6 +363,24 @@ public static class WincheAuthEndpoints
     };
 
     /// <summary>A request's body as a photo, or null when it's empty or over the limit.</summary>
+    /// <summary>A PATCH body as a JSON object, or null when it isn't one.</summary>
+    public static async Task<System.Text.Json.Nodes.JsonObject?> ReadPatchAsync(HttpRequest request, CancellationToken ct)
+    {
+        try { return await System.Text.Json.Nodes.JsonNode.ParseAsync(request.Body, cancellationToken: ct) as System.Text.Json.Nodes.JsonObject; }
+        catch (System.Text.Json.JsonException) { return null; }
+    }
+
+    /// <summary>
+    /// A profile patch on top of <paramref name="current"/>: <c>displayName</c> and <c>photoUrl</c> as sent, and what
+    /// was left out as it is (an uploaded photo stays).
+    /// </summary>
+    public static (string? DisplayName, string? PhotoUrl) PatchOf(System.Text.Json.Nodes.JsonObject body, WincheUserInfo current)
+    {
+        static string? Text(System.Text.Json.Nodes.JsonNode? n) => n is System.Text.Json.Nodes.JsonValue v && v.TryGetValue<string>(out var s) ? s : null;
+        return (body.TryGetPropertyValue("displayName", out var name) ? Text(name) : current.DisplayName,
+            body.TryGetPropertyValue("photoUrl", out var photo) ? Text(photo) : current.PhotoUrl);
+    }
+
     public static async Task<byte[]?> ReadPhotoAsync(HttpRequest request, CancellationToken ct)
     {
         if (request.ContentLength is > WincheAuthLimits.MaxPhotoBytes) return null;

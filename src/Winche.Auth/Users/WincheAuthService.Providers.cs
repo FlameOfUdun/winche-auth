@@ -147,6 +147,7 @@ internal sealed partial class WincheAuthService
             + (options.EmailLinkSignIn is not null && user is { Email: not null, EmailConfirmed: true } ? 1 : 0);
         if (methods <= 1)
             throw new AuthException(AuthErrorCodes.LastSignInMethod, $"{ProviderName(provider)} is the only way to sign in to this account: add another first.");
+        ForgetProviderPhoto(user, login.LoginProvider);
         var removed = await users.RemoveLoginAsync(user, login.LoginProvider, login.ProviderKey);
         if (!removed.Succeeded) throw Failed(removed);
         Changed($"auth.unlink.{Safe(provider)}", uid, $"{uid} unlinked {ProviderName(provider)}.");

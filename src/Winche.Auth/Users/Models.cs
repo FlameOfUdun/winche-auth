@@ -9,13 +9,13 @@ public sealed record WincheUserInfo(
     IReadOnlyList<string> Providers, IReadOnlyDictionary<string, object?> CustomClaims, DateTimeOffset CreatedAt,
     DateTimeOffset? LastSignInAt, DateTimeOffset? LockedOutUntil, bool MfaEnabled = false, string? PhotoSource = null)
 {
-    internal static WincheUserInfo From(WincheUser u, DateTimeOffset now, IReadOnlyList<string> logins)
+    internal static WincheUserInfo From(WincheUser u, DateTimeOffset now, IReadOnlyList<string> logins, WincheAuthOptions options)
     {
         var providers = new List<string>();
         if (u.IsAnonymous) providers.Add("anonymous");
         if (u.PasswordHash is not null) providers.Add("password");
         providers.AddRange(logins.Order(StringComparer.Ordinal));
-        return new WincheUserInfo(u.Id, u.Email, u.EmailConfirmed, u.DisplayName, u.PhotoUrl, u.IsAnonymous, u.Disabled, providers,
+        return new WincheUserInfo(u.Id, u.Email, u.EmailConfirmed, u.DisplayName, options.PhotoUrlOf(u), u.IsAnonymous, u.Disabled, providers,
             Tokens.CustomClaims.Parse(u.CustomClaims), u.CreatedAt, u.LastSignInAt, u.LockoutEnd is { } end && end > now ? end : null, u.TwoFactorEnabled,
             u.PhotoSource);
     }
