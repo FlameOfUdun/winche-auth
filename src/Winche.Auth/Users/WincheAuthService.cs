@@ -561,8 +561,10 @@ internal sealed partial class WincheAuthService(
         }
         if (user.TwoFactorEnabled) await ClearMfaAsync(user);
         await sessions.RevokeAllAsync(user.Id, "email proven by its owner", ct);
+        await Save(user);
+        await Record(WincheAuthUserEvent.Updated, await InfoAsync(user), ct);   // observers drop the name and photo too
         AuthEvents.Log(_events, LogLevel.Warning, "auth.claimed", user.Id, "ok",
-            $"{user.Id}'s email {user.Email} was unverified until its owner {how}: its password, linked providers, two-step sign-in and sessions were removed.",
+            $"{user.Id}'s email {user.Email} was unverified until its owner {how}: its password, linked providers, two-step sign-in, name, photo and sessions were removed.",
             user.Email);
     }
 

@@ -144,6 +144,9 @@ internal sealed partial class WincheAuthService
         var user = (row.UserId is null ? null : await users.FindByIdAsync(row.UserId)) ?? throw InvalidCode();
         if (!string.Equals(user.Email, row.Email, StringComparison.OrdinalIgnoreCase)) throw InvalidCode();
         if (user.Disabled) throw Disabled();
+        // All of it or none: a reset that fails part-way (a code used twice) leaves the account as it was.
+        return await InTransaction(async () =>
+        {
         await SecureClaimedAccountAsync(user, "reset its password", ct);
         if (user.PasswordHash is not null)
         {
@@ -161,6 +164,7 @@ internal sealed partial class WincheAuthService
         await sessions.RevokeAllAsync(user.Id, "password reset", ct);
         Changed("auth.resetPassword", user.Id, $"{user.Id} reset their password by email; every session ended.");
         return await InfoAsync(user);
+        }, ct);
     }
 
     // ── links for the app to send itself ────────────────────────────────────────
@@ -215,9 +219,13 @@ internal sealed partial class WincheAuthService
         }
         if (user.Disabled) throw Disabled();
         await BeforeSignInAsync(user, new AuthAttempt(user.Email, "emailLink", info.IpAddress), ct);
-        await SecureClaimedAccountAsync(user, "signed in with an email link", ct);
-        user.EmailConfirmed = true;
-        await UseAsync(row, ct);
+        // The account secured, verified and the code used together, or not at all.
+        await InTransaction(async () =>
+        {
+            await SecureClaimedAccountAsync(user, "signed in with an email link", ct);
+            user.EmailConfirmed = true;
+            await UseAsync(row, ct);
+        }, ct);
         return await CompleteSignInAsync(user, "emailLink", info, ct);
     }
 

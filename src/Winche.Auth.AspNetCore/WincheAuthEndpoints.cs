@@ -366,6 +366,8 @@ public static class WincheAuthEndpoints
         {
             var body = await System.Text.Json.Nodes.JsonNode.ParseAsync(request.Body, cancellationToken: ct) as System.Text.Json.Nodes.JsonObject;
             _ = body?.Count;   // read now: a field given twice is refused here, not later
+            // …and in different cases too (displayName and DisplayName): which one meant is anyone's guess.
+            if (body is not null && body.GroupBy(p => p.Key, StringComparer.OrdinalIgnoreCase).Any(g => g.Count() > 1)) return null;
             return body;
         }
         catch (Exception e) when (e is System.Text.Json.JsonException or ArgumentException) { return null; }
