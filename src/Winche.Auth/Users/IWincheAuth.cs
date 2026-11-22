@@ -55,7 +55,20 @@ public interface IWincheAuth
     /// </summary>
     Task<string> CreateEmailLinkAsync(string kind, string email, CancellationToken ct = default);
 
+    /// <summary>
+    /// The name and photo link shown for the user (null or empty clears one). A new link replaces an uploaded photo
+    /// (and stops a provider's from being refreshed).
+    /// </summary>
     Task<WincheUserInfo> UpdateProfileAsync(string uid, string? displayName, string? photoUrl, CancellationToken ct = default);
+    /// <summary>
+    /// Keeps <paramref name="image"/> as the user's photo (JPEG, PNG or WebP, at most <see cref="WincheAuthLimits.MaxPhotoBytes"/>:
+    /// shrink it first, 256 × 256 is plenty) and points <c>photoUrl</c> at it (<c>/auth/v1/photos/{id}</c>, a new id each time).
+    /// </summary>
+    Task<WincheUserInfo> SetPhotoAsync(string uid, byte[] image, CancellationToken ct = default);
+    /// <summary>Removes an uploaded photo (and <c>photoUrl</c> with it); a provider's picture comes back at the next sign-in with it.</summary>
+    Task<WincheUserInfo> RemovePhotoAsync(string uid, CancellationToken ct = default);
+    /// <summary>An uploaded photo by its id (the last part of its address), or null.</summary>
+    Task<UserPhoto?> GetPhotoAsync(string photoId, CancellationToken ct = default);
     /// <summary>A disabled user can't sign in or refresh, and their sessions end; tokens already issued expire within the access token lifetime.</summary>
     Task<WincheUserInfo> SetDisabledAsync(string uid, bool disabled, CancellationToken ct = default);
     /// <summary>Replaces the user's custom claims (null or empty clears them); they're in the next token.</summary>

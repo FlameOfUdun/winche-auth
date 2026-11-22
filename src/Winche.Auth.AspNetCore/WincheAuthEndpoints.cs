@@ -251,6 +251,28 @@ public static class WincheAuthEndpoints
             await Limit(http, "signIn", 20);
             return Tokens(await auth.ChangePasswordAsync(uid, body.CurrentPassword ?? "", body.NewPassword ?? "", Info(http), ct));
         });
+        // The signed-in user's photo: the image itself as the body (JPEG, PNG or WebP, at most 100 KB), or removed.
+        group.MapPost("/me/photo", async (HttpContext http, IWincheAuth auth, CancellationToken ct) =>
+        {
+            if (await Me(http) is not { } uid) return Unauthorized();
+            await Limit(http, "profile", 30);
+            if (await ReadPhotoAsync(http.Request, ct) is not { } image)
+                return Send(new WincheError(WincheErrorCode.InvalidArgument, $"Send the photo as the request's body, at most {WincheAuthLimits.MaxPhotoBytes / 1024} KB."));
+            return Results.Json(User(await auth.SetPhotoAsync(uid, image, ct)));
+        });
+        group.MapDelete("/me/photo", async (HttpContext http, IWincheAuth auth, CancellationToken ct) =>
+            await Me(http) is { } uid ? Results.Json(User(await auth.RemovePhotoAsync(uid, ct))) : Unauthorized());
+        // Uploaded photos, by their unguessable id: open to anyone with the address (an <img> can't send a token), and never
+        // changing (a new photo has a new id), so cached for good.
+        group.MapGet("/photos/{id}", async (string id, HttpContext http, IWincheAuth auth, CancellationToken ct) =>
+        {
+            if (await auth.GetPhotoAsync(id, ct) is not { } photo) return Results.NotFound();
+            http.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+            http.Response.Headers.XContentTypeOptions = "nosniff";
+            http.Response.Headers.ContentSecurityPolicy = "default-src 'none'";
+            return Results.Bytes(photo.Bytes, photo.ContentType, lastModified: photo.UpdatedAt);
+        }).AllowAnonymous();
+
         group.MapDelete("/me", async (HttpContext http, IWincheAuth auth, CancellationToken ct) =>
         {
             if (await RecentMe(http, clock) is not { } uid) return Unauthorized();
@@ -325,9 +347,24 @@ public static class WincheAuthEndpoints
 
     private static object User(WincheUserInfo u) => new
     {
-        uid = u.Uid, email = u.Email, emailVerified = u.EmailVerified, displayName = u.DisplayName, photoUrl = u.PhotoUrl,
+        uid = u.Uid, email = u.Email, emailVerified = u.EmailVerified, displayName = u.DisplayName, photoUrl = u.PhotoUrl, photoSource = u.PhotoSource,
         isAnonymous = u.IsAnonymous, mfaEnabled = u.MfaEnabled, providers = u.Providers, customClaims = u.CustomClaims, createdAt = u.CreatedAt, lastSignInAt = u.LastSignInAt,
     };
+
+    /// <summary>A request's body as a photo, or null when it's empty or over the limit.</summary>
+    internal static async Task<byte[]?> ReadPhotoAsync(HttpRequest request, CancellationToken ct)
+    {
+        if (request.ContentLength is > WincheAuthLimits.MaxPhotoBytes) return null;
+        using var buffer = new MemoryStream();
+        var chunk = new byte[16 * 1024];
+        int read;
+        while ((read = await request.Body.ReadAsync(chunk, ct)) > 0)
+        {
+            buffer.Write(chunk, 0, read);
+            if (buffer.Length > WincheAuthLimits.MaxPhotoBytes) return null;
+        }
+        return buffer.Length == 0 ? null : buffer.ToArray();
+    }
 
     private static IResult Unauthorized() => Send(new WincheError(WincheErrorCode.Unauthenticated, "Sign in first: send a Winche Auth access token."));
 

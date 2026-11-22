@@ -71,6 +71,8 @@ master key (`AddWincheConfig`).
 | `POST signOut` `{refreshToken}` | ends that session |
 | `POST link/password` `{email, password}` | turns the signed-in anonymous user into one with a password, same uid |
 | `GET me`, `PATCH me` `{displayName, photoUrl}`, `DELETE me` | the signed-in user |
+| `POST me/photo` (the image as the body), `DELETE me/photo` | the signed-in user's photo, kept by Winche Auth (below) |
+| `GET photos/{id}` | an uploaded photo: open to anyone with its address, cached for good |
 | `POST me/password` `{currentPassword, newPassword}` | other sessions end; this one gets new tokens |
 | `POST sendVerification` | emails the signed-in user a verify link |
 | `POST sendPasswordReset` `{email}` | emails a reset link (the same answer whether or not the address has an account) |
@@ -94,6 +96,21 @@ auth's own, e.g. `unauthenticated`/`INVALID_CREDENTIALS` (401: a wrong password 
 `already-exists`/`EMAIL_EXISTS` (409), `invalid-argument`/`WEAK_PASSWORD` or `INVALID_EMAIL` (400),
 `permission-denied`/`USER_DISABLED` (403), `resource-exhausted`/`LOCKED_OUT` or `TOO_MANY_ATTEMPTS` (429),
 `unauthenticated`/`INVALID_REFRESH_TOKEN` (401).
+
+### Photos
+
+A user's photo is `photoUrl`, one of three things (`photoSource` says which):
+
+- **`upload`:** a small image Winche Auth keeps, from `POST me/photo` or `SetPhotoAsync` (JPEG, PNG or WebP by its
+  own bytes, whatever the request says; at most 100 KB: shrink it first, 256 × 256 is plenty). It's served at
+  `/auth/v1/photos/<id>`, an id that can't be guessed and is new with each photo, so it's open to `<img>` tags (which
+  can't send a token) and cached for good. Removing it, or deleting the user, removes it.
+- **`provider:<name>`:** a sign-in provider's picture (Google's, an OpenID Connect provider's `picture`), a link to
+  them, refreshed at each sign-in while it's theirs. It's never downloaded.
+- **`link`:** a link set by the app (`PATCH me`) or an admin; it replaces an upload, and sign-ins no longer change it.
+
+Whichever was chosen last wins: an upload or a link stays through sign-ins; removing an upload lets the provider's
+picture back at the next sign-in.
 
 ## Google, Apple and OpenID Connect
 
@@ -384,6 +401,12 @@ unhealthy without the database or a signing key, and degraded when user events f
   (`link/password`, `link/idp`) doesn't.
 - An access token is read from `?access_token=` only on WebSocket upgrades (browsers can't set headers there); anywhere
   else it would end up in logs. Tokens carry `sid`, their session.
+
+## 2.1.0
+
+- Photos (above): `POST me/photo`, `DELETE me/photo`, `GET photos/{id}`; `SetPhotoAsync`, `RemovePhotoAsync`,
+  `GetPhotoAsync`; `photoSource` on users. A provider's picture is now refreshed at sign-in while it's the user's photo.
+  A migration adds `auth_user_photos` and a column (by itself, at start).
 
 ## 2.0.1
 

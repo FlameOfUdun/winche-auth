@@ -13,9 +13,9 @@ public class ProviderTests(PostgresFixture pg)
     private const string KeycloakIssuer = "https://idp.test/realms/example";
 
     private static string Google(string sub, string? email = "ann@gmail.com", bool verified = true, string aud = "app.apps.googleusercontent.com",
-        string? nonce = null, DateTime? expires = null, SecurityKey? key = null)
+        string? nonce = null, DateTime? expires = null, SecurityKey? key = null, string picture = "https://lh3.example.com/ann.png")
     {
-        var claims = new Dictionary<string, object> { ["sub"] = sub, ["name"] = "Ann Google", ["picture"] = "https://lh3.example.com/ann.png" };
+        var claims = new Dictionary<string, object> { ["sub"] = sub, ["name"] = "Ann Google", ["picture"] = picture };
         if (email is not null) { claims["email"] = email; claims["email_verified"] = verified; }
         if (nonce is not null) claims["nonce"] = nonce;
         return new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
@@ -53,6 +53,31 @@ public class ProviderTests(PostgresFixture pg)
     })).Unwrap();
 
     private static object Idp(string provider, string idToken, string? nonce = null) => new { provider, idToken, nonce };
+
+    [Fact]
+    public async Task A_providers_picture_follows_sign_ins_until_the_user_or_an_admin_chooses_another()
+    {
+        await using var app = await Start();
+        async Task<Session> SignIn(string picture) => await app.SessionAsync(await app.PostAsync("/auth/v1/signIn/idp", Idp("google", Google("g-photo", picture: picture))));
+        var first = await SignIn("https://lh3.example.com/ann-1.png");
+        var u = (await app.Scoped(a => a.GetUserAsync(first.Uid)))!;
+        Assert.Equal(("https://lh3.example.com/ann-1.png", "provider:google"), (u.PhotoUrl, u.PhotoSource));
+        await SignIn("https://lh3.example.com/ann-2.png");   // they changed it at Google: it follows
+        Assert.Equal("https://lh3.example.com/ann-2.png", (await app.Scoped(a => a.GetUserAsync(first.Uid)))!.PhotoUrl);
+
+        // An upload wins over sign-ins; removing it brings the provider's back at the next one.
+        await app.Scoped(a => a.SetPhotoAsync(first.Uid, PhotoTests.Png));
+        await SignIn("https://lh3.example.com/ann-3.png");
+        Assert.Equal("upload", (await app.Scoped(a => a.GetUserAsync(first.Uid)))!.PhotoSource);
+        await app.Scoped(a => a.RemovePhotoAsync(first.Uid));
+        await SignIn("https://lh3.example.com/ann-4.png");
+        Assert.Equal(("https://lh3.example.com/ann-4.png", "provider:google"), ((await app.Scoped(a => a.GetUserAsync(first.Uid)))!.PhotoUrl, (await app.Scoped(a => a.GetUserAsync(first.Uid)))!.PhotoSource));
+
+        // A link set by an admin (or the app) wins too.
+        await app.Scoped(a => a.UpdateProfileAsync(first.Uid, "Ann", "https://cdn.example.com/ann.jpg"));
+        await SignIn("https://lh3.example.com/ann-5.png");
+        Assert.Equal("https://cdn.example.com/ann.jpg", (await app.Scoped(a => a.GetUserAsync(first.Uid)))!.PhotoUrl);
+    }
 
     [Fact]
     public async Task Google_sign_in_makes_the_user_once_and_signs_them_in_after()

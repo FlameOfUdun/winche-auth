@@ -39,7 +39,7 @@ internal sealed partial class WincheAuthService
             user.Email = email;
             user.EmailConfirmed = email is not null && id.EmailVerified;
             user.DisplayName = Clean(id.Name, 100);
-            user.PhotoUrl = PhotoOrNull(id.Picture);
+            TakeProviderPhoto(user, provider.Name, id.Picture);
             CopyClaims(user, provider, id);
             await CreateAsync(user, null, async () =>
             {
@@ -56,6 +56,7 @@ internal sealed partial class WincheAuthService
         else
         {
             if (user.Disabled) throw Disabled();
+            TakeProviderPhoto(user, provider.Name, id.Picture);   // refreshed while it's the provider's
             CopyClaims(user, provider, id);
             if (id.EmailVerified && string.Equals(user.Email, id.Email, StringComparison.OrdinalIgnoreCase)) user.EmailConfirmed = true;
             await Save(user);
@@ -123,7 +124,7 @@ internal sealed partial class WincheAuthService
             }
         }
         user.DisplayName ??= Clean(id.Name, 100);
-        user.PhotoUrl ??= PhotoOrNull(id.Picture);
+        TakeProviderPhoto(user, provider.Name, id.Picture);
         CopyClaims(user, provider, id);
         await Save(user);
         return await StartSessionAsync(user, provider.Name, info, ct, providerSessionId: sid);

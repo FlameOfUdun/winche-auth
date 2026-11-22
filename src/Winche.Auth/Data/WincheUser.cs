@@ -7,12 +7,28 @@ internal sealed class WincheUser : IdentityUser
 {
     public string? DisplayName { get; set; }
     public string? PhotoUrl { get; set; }
+    /// <summary>
+    /// Where <see cref="PhotoUrl"/> came from: <c>upload</c> (a photo Winche Auth keeps), <c>link</c> (set by the app or an
+    /// admin), <c>provider:&lt;name&gt;</c> (a sign-in provider's picture, refreshed at each sign-in), or null (from before).
+    /// </summary>
+    public string? PhotoSource { get; set; }
     public bool IsAnonymous { get; set; }
     public bool Disabled { get; set; }
     /// <summary>Custom claims as a JSON object, added to the user's tokens (rules: <c>request.auth.token.*</c>).</summary>
     public string? CustomClaims { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? LastSignInAt { get; set; }
+}
+
+/// <summary>A user's uploaded photo (table <c>auth_user_photos</c>): a small image, served at <c>/auth/v1/photos/{PhotoId}</c>.</summary>
+internal sealed class AuthUserPhoto
+{
+    public string UserId { get; set; } = "";
+    /// <summary>Random, new with every photo: its address can't be guessed and can be cached for good.</summary>
+    public string PhotoId { get; set; } = "";
+    public string ContentType { get; set; } = "";
+    public byte[] Bytes { get; set; } = [];
+    public DateTimeOffset UpdatedAt { get; set; }
 }
 
 /// <summary>A signed-in device (table <c>auth_sessions</c>): its refresh token, replaced on every use.</summary>

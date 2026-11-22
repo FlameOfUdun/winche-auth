@@ -13,6 +13,7 @@ internal sealed class WincheAuthDbContext(DbContextOptions<WincheAuthDbContext> 
     public DbSet<AuthSigningKey> SigningKeys => Set<AuthSigningKey>();
     public DbSet<AuthActionCode> ActionCodes => Set<AuthActionCode>();
     public DbSet<AuthEmailTemplate> EmailTemplates => Set<AuthEmailTemplate>();
+    public DbSet<AuthUserPhoto> Photos => Set<AuthUserPhoto>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -22,6 +23,7 @@ internal sealed class WincheAuthDbContext(DbContextOptions<WincheAuthDbContext> 
             e.ToTable("auth_users");
             e.Property(u => u.Id).HasMaxLength(64);
             e.Property(u => u.CustomClaims).HasColumnType("jsonb");
+            e.Property(u => u.PhotoSource).HasMaxLength(80);
             // Unique among users that have one (anonymous users have none).
             e.HasIndex(u => u.NormalizedEmail).IsUnique().HasFilter("\"NormalizedEmail\" IS NOT NULL").HasDatabaseName("auth_users_email");
             e.HasIndex(u => u.CreatedAt).HasDatabaseName("auth_users_created");
@@ -61,6 +63,16 @@ internal sealed class WincheAuthDbContext(DbContextOptions<WincheAuthDbContext> 
             e.ToTable("auth_email_templates");
             e.HasKey(t => t.Kind);
             e.Property(t => t.Kind).HasMaxLength(32);
+        });
+        builder.Entity<AuthUserPhoto>(e =>
+        {
+            e.ToTable("auth_user_photos");
+            e.HasKey(p => p.UserId);
+            e.Property(p => p.UserId).HasMaxLength(64);
+            e.Property(p => p.PhotoId).HasMaxLength(40).IsRequired();
+            e.Property(p => p.ContentType).HasMaxLength(32).IsRequired();
+            e.HasIndex(p => p.PhotoId).IsUnique().HasDatabaseName("auth_user_photos_photo");
+            e.HasOne<WincheUser>().WithOne().HasForeignKey<AuthUserPhoto>(p => p.UserId).OnDelete(DeleteBehavior.Cascade);
         });
         builder.Entity<AuthSigningKey>(e =>
         {

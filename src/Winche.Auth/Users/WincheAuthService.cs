@@ -354,10 +354,22 @@ internal sealed partial class WincheAuthService(
     {
         if (photoUrl is { Length: > 0 } && !(Uri.TryCreate(photoUrl, UriKind.Absolute, out var url) && url.Scheme is "https" or "http"))
             throw new AuthException(AuthErrorCodes.InvalidArgument, "photoUrl must be an http(s) URL.");
-        return SaveUpdatedAsync(uid, user =>
+        return InTransaction(async () =>
         {
+            var user = await Find(uid);
             user.DisplayName = Clean(displayName, 100);
-            user.PhotoUrl = Clean(photoUrl, 2000);
+            var url = Clean(photoUrl, 2000);
+            if (url != user.PhotoUrl)
+            {
+                // A new link (or none) replaces an uploaded photo, and a provider's no longer follows sign-ins.
+                if (await db.Photos.FindAsync([uid], ct) is { } kept) db.Photos.Remove(kept);
+                user.PhotoUrl = url;
+                user.PhotoSource = url is null ? null : "link";
+            }
+            await Save(user);
+            var info = await InfoAsync(user);
+            await Record(WincheAuthUserEvent.Updated, info, ct);
+            return info;
         }, ct);
     }
 

@@ -257,6 +257,38 @@ namespace Winche.Auth.Data.Migrations
                     b.ToTable("auth_signing_keys", (string)null);
                 });
 
+            modelBuilder.Entity("Winche.Auth.Data.AuthUserPhoto", b =>
+                {
+                    b.Property<string>("UserId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<byte[]>("Bytes")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("PhotoId")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("UserId");
+
+                    b.HasIndex("PhotoId")
+                        .IsUnique()
+                        .HasDatabaseName("auth_user_photos_photo");
+
+                    b.ToTable("auth_user_photos", (string)null);
+                });
+
             modelBuilder.Entity("Winche.Auth.Data.WincheUser", b =>
                 {
                     b.Property<string>("Id")
@@ -317,6 +349,10 @@ namespace Winche.Auth.Data.Migrations
 
                     b.Property<bool>("PhoneNumberConfirmed")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("PhotoSource")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
 
                     b.Property<string>("PhotoUrl")
                         .HasColumnType("text");
@@ -388,6 +424,15 @@ namespace Winche.Auth.Data.Migrations
                     b.HasOne("Winche.Auth.Data.WincheUser", null)
                         .WithMany()
                         .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Winche.Auth.Data.AuthUserPhoto", b =>
+                {
+                    b.HasOne("Winche.Auth.Data.WincheUser", null)
+                        .WithOne()
+                        .HasForeignKey("Winche.Auth.Data.AuthUserPhoto", "UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

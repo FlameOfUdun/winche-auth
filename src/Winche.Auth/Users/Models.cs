@@ -7,7 +7,7 @@ namespace Winche.Auth;
 public sealed record WincheUserInfo(
     string Uid, string? Email, bool EmailVerified, string? DisplayName, string? PhotoUrl, bool IsAnonymous, bool Disabled,
     IReadOnlyList<string> Providers, IReadOnlyDictionary<string, object?> CustomClaims, DateTimeOffset CreatedAt,
-    DateTimeOffset? LastSignInAt, DateTimeOffset? LockedOutUntil, bool MfaEnabled = false)
+    DateTimeOffset? LastSignInAt, DateTimeOffset? LockedOutUntil, bool MfaEnabled = false, string? PhotoSource = null)
 {
     internal static WincheUserInfo From(WincheUser u, DateTimeOffset now, IReadOnlyList<string> logins)
     {
@@ -16,8 +16,19 @@ public sealed record WincheUserInfo(
         if (u.PasswordHash is not null) providers.Add("password");
         providers.AddRange(logins.Order(StringComparer.Ordinal));
         return new WincheUserInfo(u.Id, u.Email, u.EmailConfirmed, u.DisplayName, u.PhotoUrl, u.IsAnonymous, u.Disabled, providers,
-            Tokens.CustomClaims.Parse(u.CustomClaims), u.CreatedAt, u.LastSignInAt, u.LockoutEnd is { } end && end > now ? end : null, u.TwoFactorEnabled);
+            Tokens.CustomClaims.Parse(u.CustomClaims), u.CreatedAt, u.LastSignInAt, u.LockoutEnd is { } end && end > now ? end : null, u.TwoFactorEnabled,
+            u.PhotoSource);
     }
+}
+
+/// <summary>An uploaded photo: its bytes, its type, and when it was set.</summary>
+public sealed record UserPhoto(byte[] Bytes, string ContentType, DateTimeOffset UpdatedAt);
+
+/// <summary>Winche Auth's fixed limits.</summary>
+public static class WincheAuthLimits
+{
+    /// <summary>The largest photo kept: 100 KB.</summary>
+    public const int MaxPhotoBytes = 100 * 1024;
 }
 
 /// <summary>What a successful sign-in returns: an access token for API calls and a refresh token for new ones.</summary>
