@@ -114,6 +114,12 @@ public class PhotoTests(PostgresFixture pg)
         var photoNow = (await TestApp.Json(await app.SendAsync(HttpMethod.Get, "/auth/v1/me", ann.AccessToken))).GetProperty("photoUrl").GetString();
         foreach (var bad in new object[] { new { photoUrl = 5 }, new { displayName = new { } }, new[] { 1, 2 }, "text" })
             Assert.Equal(400, (await TestApp.Error(await app.SendAsync(HttpMethod.Patch, "/auth/v1/me", ann.AccessToken, bad))).Item1);
+        // A field given twice: refused, not a server error.
+        using (var twice = new HttpRequestMessage(HttpMethod.Patch, "/auth/v1/me") { Content = new StringContent("""{"displayName":"a","displayName":"b"}""", System.Text.Encoding.UTF8, "application/json") })
+        {
+            twice.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ann.AccessToken);
+            Assert.Equal(HttpStatusCode.BadRequest, (await app.Client.SendAsync(twice)).StatusCode);
+        }
         Assert.Equal(photoNow, (await TestApp.Json(await app.SendAsync(HttpMethod.Get, "/auth/v1/me", ann.AccessToken))).GetProperty("photoUrl").GetString());
     }
 

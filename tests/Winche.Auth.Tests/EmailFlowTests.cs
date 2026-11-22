@@ -69,6 +69,9 @@ public class EmailFlowTests(PostgresFixture pg)
         var (app, outbox) = await Start();
         await using var _ = app;
         var s = await app.SignUpAsync("ann@example.com");
+        // Whoever signed up with the address (never proved) set a name and photo.
+        await app.Scoped(a => a.UpdateProfileAsync(s.Uid, "Not Ann", null));
+        await app.Scoped(a => a.SetPhotoAsync(s.Uid, PhotoTests.Png));
         Assert.Equal(HttpStatusCode.NoContent, (await app.PostAsync("/auth/v1/sendPasswordReset", new { email = "nobody@example.com" })).StatusCode);
         Assert.Equal(0, outbox.Count("nobody@example.com"));   // same answer, nothing sent
 
@@ -79,6 +82,9 @@ public class EmailFlowTests(PostgresFixture pg)
         Assert.Equal((400, "INVALID_CODE"), await TestApp.Error(await app.PostAsync("/auth/v1/resetPassword", new { code, newPassword = "another new password" })));
 
         Assert.Equal(401, (int)(await app.PostAsync("/auth/v1/token", new { refreshToken = s.RefreshToken })).StatusCode);   // sessions ended
+        // The address's owner proved it: the name and photo the other person set are gone too.
+        var owned = (await app.Scoped(a => a.GetUserAsync(s.Uid)))!;
+        Assert.Equal((null, null, null), (owned.DisplayName, owned.PhotoUrl, owned.PhotoSource));
         await app.SessionAsync(await app.PostAsync("/auth/v1/signIn", new { email = "ann@example.com", password = "a brand new password" }));
     }
 

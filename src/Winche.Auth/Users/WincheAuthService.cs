@@ -543,6 +543,11 @@ internal sealed partial class WincheAuthService(
         if (user.EmailConfirmed) return;
         var logins = await users.GetLoginsAsync(user);
         if (user.PasswordHash is null && logins.Count == 0 && !user.TwoFactorEnabled) return;
+        // What whoever made the account showed as the owner goes too: their name and photo (an upload is deleted).
+        await db.Photos.Where(p => p.UserId == user.Id).ExecuteDeleteAsync(ct);
+        user.DisplayName = null;
+        user.PhotoUrl = null;
+        user.PhotoSource = null;
         if (user.PasswordHash is not null)
         {
             var removed = await users.RemovePasswordAsync(user);

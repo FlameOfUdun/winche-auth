@@ -13,7 +13,6 @@ public static class WincheAuthEndpoints
     public sealed record SignUpRequest(string? Email, string? Password, string? DisplayName);
     public sealed record SignInRequest(string? Email, string? Password);
     public sealed record RefreshRequest(string? RefreshToken);
-    public sealed record ProfileRequest(string? DisplayName, string? PhotoUrl);
     public sealed record PasswordRequest(string? CurrentPassword, string? NewPassword);
     public sealed record EmailRequest(string? Email);
     public sealed record CodeRequest(string? Code);
@@ -363,8 +362,13 @@ public static class WincheAuthEndpoints
     /// <summary>A PATCH body as a JSON object, or null when it isn't one.</summary>
     public static async Task<System.Text.Json.Nodes.JsonObject?> ReadPatchAsync(HttpRequest request, CancellationToken ct)
     {
-        try { return await System.Text.Json.Nodes.JsonNode.ParseAsync(request.Body, cancellationToken: ct) as System.Text.Json.Nodes.JsonObject; }
-        catch (System.Text.Json.JsonException) { return null; }
+        try
+        {
+            var body = await System.Text.Json.Nodes.JsonNode.ParseAsync(request.Body, cancellationToken: ct) as System.Text.Json.Nodes.JsonObject;
+            _ = body?.Count;   // read now: a field given twice is refused here, not later
+            return body;
+        }
+        catch (Exception e) when (e is System.Text.Json.JsonException or ArgumentException) { return null; }
     }
 
     /// <summary>
