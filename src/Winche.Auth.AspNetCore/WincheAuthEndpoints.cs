@@ -352,7 +352,7 @@ public static class WincheAuthEndpoints
     };
 
     /// <summary>A request's body as a photo, or null when it's empty or over the limit.</summary>
-    internal static async Task<byte[]?> ReadPhotoAsync(HttpRequest request, CancellationToken ct)
+    public static async Task<byte[]?> ReadPhotoAsync(HttpRequest request, CancellationToken ct)
     {
         if (request.ContentLength is > WincheAuthLimits.MaxPhotoBytes) return null;
         using var buffer = new MemoryStream();
