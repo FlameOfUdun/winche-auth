@@ -55,9 +55,9 @@ public sealed class FakeOidcProvider : IAsyncDisposable
             Expires = expires ?? DateTime.UtcNow.AddMinutes(5),
             Claims = new Dictionary<string, object>
             {
-                ["sub"] = sub, ["email"] = "dr.costa@example.com", ["given_name"] = "Ana", ["family_name"] = "Costa",
-                ["realm_access"] = new Dictionary<string, object> { ["roles"] = roles ?? ["clinician", "trainer"] },
-                ["org"] = "st-marys", ["groups"] = new[] { "/clinicians" },
+                ["sub"] = sub, ["email"] = "ana@example.com", ["given_name"] = "Ana", ["family_name"] = "Lopez",
+                ["realm_access"] = new Dictionary<string, object> { ["roles"] = roles ?? ["editor", "trainer"] },
+                ["org"] = "acme", ["groups"] = new[] { "/editors" },
             },
             SigningCredentials = new SigningCredentials(Key, SecurityAlgorithms.RsaSha256),
         });
@@ -98,9 +98,9 @@ public class ProviderSettingsTests(PostgresFixture pg)
         var claims = await app.WhoAmI(token);
         Assert.Equal("6f1c2a9e-1b2c-4d5e-8f90-123456789abc", claims.GetProperty("uid").GetString());
         Assert.Equal("keycloak", claims.GetProperty("issuer").GetString());
-        Assert.Equal(["clinician", "trainer"], claims.GetProperty("roles").EnumerateArray().Select(r => r.GetString()));
-        Assert.Equal("Ana Costa", claims.GetProperty("name").GetString());
-        Assert.Equal("dr.costa@example.com", claims.GetProperty("email").GetString());   // always passed
+        Assert.Equal(["editor", "trainer"], claims.GetProperty("roles").EnumerateArray().Select(r => r.GetString()));
+        Assert.Equal("Ana Lopez", claims.GetProperty("name").GetString());
+        Assert.Equal("ana@example.com", claims.GetProperty("email").GetString());   // always passed
         Assert.False(claims.TryGetProperty("groups", out _));   // not mapped
         Assert.False(claims.TryGetProperty("realm_access", out _));
 
@@ -153,7 +153,7 @@ public class ProviderSettingsTests(PostgresFixture pg)
         Assert.Contains(ok.Checks, c => c.Outcome == "warning" && c.Text.StartsWith("org is in the token"));
         Assert.Equal("u-1", ok.Auth!["uid"]);
         var token = (IReadOnlyDictionary<string, object?>)ok.Auth["token"]!;
-        Assert.Equal(new List<object?> { "clinician", "trainer" }, token["roles"]);
+        Assert.Equal(new List<object?> { "editor", "trainer" }, token["roles"]);
 
         // Expired: still mapped, but marked as unable to sign in.
         var old = await inspector.InspectAsync(idp.Token("u-1", expires: DateTime.UtcNow.AddHours(-3)), draft);

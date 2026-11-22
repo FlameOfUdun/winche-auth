@@ -27,7 +27,7 @@ public class TrustedIssuerTests(PostgresFixture pg)
             Issuer = issuer,
             Audience = audience,
             Expires = DateTime.UtcNow.AddMinutes(5),
-            Claims = new Dictionary<string, object> { ["sub"] = sub, ["role"] = "clinician", ["email"] = "kc@example.com", ["session_state"] = "secret-ish" },
+            Claims = new Dictionary<string, object> { ["sub"] = sub, ["role"] = "editor", ["email"] = "kc@example.com", ["session_state"] = "secret-ish" },
             SigningCredentials = new SigningCredentials(key ?? Keycloak, SecurityAlgorithms.RsaSha256),
         });
 
@@ -46,7 +46,7 @@ public class TrustedIssuerTests(PostgresFixture pg)
         var claims = await app.WhoAmI(KeycloakToken("kc-123"));
         Assert.Equal("kc-123", claims.GetProperty("uid").GetString());
         Assert.Equal("keycloak", claims.GetProperty("issuer").GetString());
-        Assert.Equal("clinician", claims.GetProperty("role").GetString());
+        Assert.Equal("editor", claims.GetProperty("role").GetString());
         Assert.Equal("kc@example.com", claims.GetProperty("email").GetString());
         Assert.False(claims.TryGetProperty("session_state", out _));   // not in MapClaims
 
@@ -98,7 +98,7 @@ public class TrustedIssuerTests(PostgresFixture pg)
                       allow read, write: if request.auth.uid == uid;
                     }
                     match staff/{doc} {
-                      allow read: if request.auth.token.role == 'clinician' && request.auth.token.issuer == 'keycloak';
+                      allow read: if request.auth.token.role == 'editor' && request.auth.token.issuer == 'keycloak';
                     }
                     """);
             }),

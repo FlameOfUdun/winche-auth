@@ -12,14 +12,14 @@ public class ManagementTests(PostgresFixture pg)
         var s = await app.SignUpAsync("ann@example.com");
         await app.Scoped(a => a.SetCustomClaimsAsync(s.Uid, new Dictionary<string, object?>
         {
-            ["role"] = "clinician", ["level"] = 3, ["orgs"] = new[] { "st-marys", "example" },
+            ["role"] = "editor", ["level"] = 3, ["orgs"] = new[] { "acme", "example" },
         }));
         var next = await app.SessionAsync(await app.PostAsync("/auth/v1/token", new { refreshToken = s.RefreshToken }));
         var claims = await app.WhoAmI(next.AccessToken);
-        Assert.Equal("clinician", claims.GetProperty("role").GetString());
+        Assert.Equal("editor", claims.GetProperty("role").GetString());
         Assert.Equal(3, claims.GetProperty("level").GetInt32());
-        Assert.Equal(["st-marys", "example"], claims.GetProperty("orgs").EnumerateArray().Select(o => o.GetString()));
-        Assert.Equal("clinician", next.Body.GetProperty("user").GetProperty("customClaims").GetProperty("role").GetString());
+        Assert.Equal(["acme", "example"], claims.GetProperty("orgs").EnumerateArray().Select(o => o.GetString()));
+        Assert.Equal("editor", next.Body.GetProperty("user").GetProperty("customClaims").GetProperty("role").GetString());
 
         var reserved = await Assert.ThrowsAsync<AuthException>(() => app.Scoped(a => a.SetCustomClaimsAsync(s.Uid, new Dictionary<string, object?> { ["uid"] = "someone-else" })));
         Assert.Equal("INVALID_CLAIMS", reserved.Code);

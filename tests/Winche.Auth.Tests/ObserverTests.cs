@@ -35,7 +35,7 @@ public class ObserverTests(PostgresFixture pg)
         var ann = await app.SignUpAsync("ann@example.com");
         await TestApp.Json(await app.PostAsync("/auth/v1/signIn", new { email = "ann@example.com", password = "correct horse battery" }));
         await app.Scoped(a => a.SetDisabledAsync(ann.Uid, true));
-        await app.Scoped(a => a.SetCustomClaimsAsync(ann.Uid, new Dictionary<string, object?> { ["role"] = "clinician" }));
+        await app.Scoped(a => a.SetCustomClaimsAsync(ann.Uid, new Dictionary<string, object?> { ["role"] = "editor" }));
         await app.Scoped(async a => { await a.DeleteUserAsync(ann.Uid); return true; });
         // Delivered after the commit: wait for the last one.
         for (var i = 0; i < 200 && recorder.Seen.Count < 6; i++) await Task.Delay(25);

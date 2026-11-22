@@ -204,13 +204,13 @@ public class KeycloakSyncTests(PostgresFixture pg)
         u.Email = "ann.k@example.com";
         u.LastName = "Smith";
         u.Attributes["role"] = ["doctor"];
-        u.Roles = ["default-roles-example", "clinician"];
+        u.Roles = ["default-roles-example", "editor"];
         kc.AdminChanged("kc-ann");
         await Until(async () => (await User(app, ann.Uid)).Email == "ann.k@example.com");
         var user = await User(app, ann.Uid);
         Assert.Equal("Ann Smith", user.DisplayName);
         Assert.Equal("doctor", user.CustomClaims["role"]?.ToString());
-        Assert.Contains("clinician", System.Text.Json.JsonSerializer.Serialize(user.CustomClaims["realm_access"]));
+        Assert.Contains("editor", System.Text.Json.JsonSerializer.Serialize(user.CustomClaims["realm_access"]));
 
         // An attribute removed there: the claim goes too.
         u.Attributes.Remove("role");

@@ -167,10 +167,10 @@ public class ProviderTests(PostgresFixture pg)
     public async Task Keycloak_users_keep_their_ids_and_roles_follow_each_sign_in()
     {
         await using var app = await Start();
-        var s = await app.SessionAsync(await app.PostAsync("/auth/v1/signIn/idp", Idp("keycloak", Keycloak("6f1c2a9e-1b2c-4d5e-8f90-123456789abc", "clinician"))));
+        var s = await app.SessionAsync(await app.PostAsync("/auth/v1/signIn/idp", Idp("keycloak", Keycloak("6f1c2a9e-1b2c-4d5e-8f90-123456789abc", "editor"))));
         Assert.Equal("6f1c2a9e-1b2c-4d5e-8f90-123456789abc", s.Uid);   // existing users/{uid} documents still match
         var claims = await app.WhoAmI(s.AccessToken);
-        Assert.Equal("clinician", claims.GetProperty("role").GetString());
+        Assert.Equal("editor", claims.GetProperty("role").GetString());
         Assert.Equal("keycloak", claims.GetProperty("provider").GetString());
 
         var promoted = await app.SessionAsync(await app.PostAsync("/auth/v1/signIn/idp", Idp("keycloak", Keycloak("6f1c2a9e-1b2c-4d5e-8f90-123456789abc", "admin"))));
