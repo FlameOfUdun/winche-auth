@@ -114,7 +114,6 @@ internal sealed partial class WincheAuthService
         var added = await users.AddLoginAsync(user, new UserLoginInfo(provider.Name, id.Subject, provider.DisplayName));
         if (!added.Succeeded) throw Failed(added);
         await SetTokenAsync(user, LinkedAt(provider.Name, id.Subject), time.GetUtcNow().ToUnixTimeMilliseconds().ToString());   // an undo of an email change asks when
-        await SendProviderLinkedAsync(user, provider.Name, provider.DisplayName, id.Subject, ct);   // the owner is told, with a link that removes it
         if (user.IsAnonymous)
         {
             user.IsAnonymous = false;
@@ -129,6 +128,7 @@ internal sealed partial class WincheAuthService
         TakeProviderPhoto(user, provider.Name, id.Picture);
         CopyClaims(user, provider, id);
         await Save(user);
+        await SendProviderLinkedAsync(user, provider.Name, provider.DisplayName, id.Subject, ct);   // the owner is told, with a link that removes it
         return await StartSessionAsync(user, provider.Name, info, ct, providerSessionId: sid);
     }
 

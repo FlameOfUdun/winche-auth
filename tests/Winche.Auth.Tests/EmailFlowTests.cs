@@ -8,8 +8,10 @@ namespace Winche.Auth.Tests;
 public sealed class Outbox : IAuthEmailSender
 {
     public List<AuthEmailMessage> Sent { get; } = [];
+    public bool Down;   // the mail server refusing everything
     public Task SendAsync(AuthEmailMessage message, CancellationToken ct)
     {
+        if (Down) throw new InvalidOperationException("The mail server is down.");
         lock (Sent) Sent.Add(message);
         return Task.CompletedTask;
     }
@@ -319,6 +321,33 @@ public class EmailFlowTests(PostgresFixture pg)
         Assert.NotEqual(s.Uid, (await app.SessionAsync(await app.PostAsync("/auth/v1/signIn/idp", new { provider = "google", idToken = theirs }))).Uid);
         Assert.Equal(401, (int)(await app.SendAsync(HttpMethod.Get, "/auth/v1/me", session.AccessToken)).StatusCode);
         Assert.Equal((400, "INVALID_CODE"), await TestApp.Error(await Apply(app, Outbox.Code(notice))));
+    }
+
+    [Fact]
+    public async Task Linking_and_unlinking_over_and_over_never_uses_up_the_owners_emails()
+    {
+        var (app, outbox) = await Start(o => o.Google(g => { g.Audiences = ["app"]; g.AllowUnsignedTokensForTesting = true; }));
+        await using var _ = app;
+        var s = await app.SignUpAsync("ann@example.com");
+        for (var n = 0; n < 6; n++)
+        {
+            await app.SessionAsync(await app.PostAsync("/auth/v1/link/idp", new { provider = "google", idToken = GoogleToken($"g-{n}") }, s.AccessToken));
+            await TestApp.Json(await app.PostAsync("/auth/v1/unlink", new { provider = "google" }, s.AccessToken));
+        }
+        await app.PostAsync("/auth/v1/sendPasswordReset", new { email = "ann@example.com" });
+        Assert.Equal("resetPassword", outbox.Last("ann@example.com").Kind);
+    }
+
+    [Fact]
+    public async Task A_notice_that_cant_be_sent_never_leaves_a_link_half_made()
+    {
+        var (app, outbox) = await Start(o => o.Google(g => { g.Audiences = ["app"]; g.AllowUnsignedTokensForTesting = true; }));
+        await using var _ = app;
+        var s = await app.SignUpAsync("ann@example.com");
+        outbox.Down = true;
+        var r = await app.PostAsync("/auth/v1/link/idp", new { provider = "google", idToken = GoogleToken("g-1") }, s.AccessToken);
+        Assert.True(r.IsSuccessStatusCode, await r.Content.ReadAsStringAsync());   // linked; the notice's failure is logged
+        Assert.Equal(s.Uid, (await app.SessionAsync(await app.PostAsync("/auth/v1/signIn/idp", new { provider = "google", idToken = GoogleToken("g-1") }))).Uid);
     }
 
     private static string GoogleToken(string sub)

@@ -159,8 +159,17 @@ internal sealed partial class WincheAuthService
         if (options.EmailSending is null || string.IsNullOrEmpty(user.Email)) return;
         var settings = RequireEmail();
         Guid made = default;
-        await SendCodeAsync(AuthEmailKinds.ProviderLinked, AuthEmailKinds.UnlinkProvider, user, user.Email, settings.UndoLinkLifetime,
-            new Dictionary<string, string?> { ["PROVIDER"] = providerName ?? provider }, ct, limit: false, background: true, made: id => made = id);
+        try
+        {
+            await SendCodeAsync(AuthEmailKinds.ProviderLinked, AuthEmailKinds.UnlinkProvider, user, user.Email, settings.UndoLinkLifetime,
+                new Dictionary<string, string?> { ["PROVIDER"] = providerName ?? provider }, ct, limit: false, background: true, made: id => made = id);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            // The link is made: a mail server down doesn't undo it (its failure is said in the log).
+            AuthEvents.Log(_events, LogLevel.Error, $"auth.send.{AuthEmailKinds.ProviderLinked}", user.Id, "failed",
+                $"Couldn't tell {user.Email} that a {providerName ?? provider} account was linked: {e.Message}", user.Email);
+        }
         if (made != default) await SetTokenAsync(user, UnlinkTarget(made), $"{provider}\t{key}");
     }
 
@@ -409,7 +418,8 @@ internal sealed partial class WincheAuthService
         var now = time.GetUtcNow();
         // Addresses are compared without case: Victim@ and victim@ are one inbox, with one hourly allowance.
         var address = to.ToLowerInvariant();
-        if (limit && await db.ActionCodes.CountAsync(c => c.Email.ToLower() == address && c.CreatedAt > now.AddHours(-1), ct) >= settings.MaxPerAddressPerHour)
+        // Notices of a linked provider aren't counted: linking over and over must never use up the owner's emails.
+        if (limit && await db.ActionCodes.CountAsync(c => c.Email.ToLower() == address && c.CreatedAt > now.AddHours(-1) && c.Kind != AuthEmailKinds.UnlinkProvider, ct) >= settings.MaxPerAddressPerHour)
         {
             AuthEvents.Log(_events, LogLevel.Warning, $"auth.send.{template}", user?.Id ?? to, "tooMany",
                 $"Not sending another {template} email to {to}: {settings.MaxPerAddressPerHour} in the last hour.", to);
