@@ -68,5 +68,5 @@ public sealed record UserListPage(IReadOnlyList<WincheUserInfo> Users, string? N
 
 public sealed record UserPage(IReadOnlyList<WincheUserInfo> Users, int Total);
 
-/// <summary>What an emailed link does: its mode (verifyEmail, verifyAndChangeEmail, recoverEmail, resetPassword, signIn) and address.</summary>
+/// <summary>What an emailed link does: its mode (verifyEmail, verifyAndChangeEmail, recoverEmail, unlinkProvider, resetPassword, signIn) and address.</summary>
 public sealed record ActionCodeInfo(string Mode, string Email);

@@ -9,12 +9,15 @@ public static class AuthEmailKinds
     public const string ResetPassword = "resetPassword";
     public const string SignIn = "signIn";
     public const string EmailChanged = "emailChanged";
+    /// <summary>A provider account was linked: the owner is told, with a link that removes it.</summary>
+    public const string ProviderLinked = "providerLinked";
     /// <summary>The code in a confirm-new-email message (sent with the verifyEmail template to the new address).</summary>
     internal const string ChangeEmail = "changeEmail";
     /// <summary>The code in an email-changed notice: puts the old address back.</summary>
     internal const string RecoverEmail = "recoverEmail";
+    internal const string UnlinkProvider = "unlinkProvider";
 
-    public static readonly IReadOnlyList<string> All = [VerifyEmail, ResetPassword, SignIn, EmailChanged];
+    public static readonly IReadOnlyList<string> All = [VerifyEmail, ResetPassword, SignIn, EmailChanged, ProviderLinked];
 }
 
 /// <summary>A message to send: plain text and HTML, and the link it carries.</summary>

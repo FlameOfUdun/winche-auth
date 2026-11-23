@@ -47,6 +47,9 @@ internal static class ActionPage
                 case "verifyAndChangeEmail":
                     await auth.ApplyActionCodeAsync(code, http.RequestAborted);
                     return Page(options, "Your email is changed", $"<p>Your account's email is now <b>{E(info.Email)}</b>.</p>");
+                case "unlinkProvider":
+                    await auth.ApplyActionCodeAsync(code, http.RequestAborted);
+                    return Page(options, "It's removed", "<p>That sign-in method no longer signs in to your account, and every device has been signed out. If you didn't add it, change your password too.</p>");
                 case "recoverEmail":
                     await auth.ApplyActionCodeAsync(code, http.RequestAborted);
                     return Page(options, "Your email is back", $"<p>Your account's email is <b>{E(info.Email)}</b> again, and every device has been signed out. If someone else changed it, change your password too.</p>");
@@ -74,6 +77,8 @@ internal static class ActionPage
                 $"<p class=\"hint\">At least {options.EmailPasswordSignIn?.MinLength ?? 10} characters.</p><button type=\"submit\">Save password</button></form>"),
             "verifyAndChangeEmail" => ("Change your email",
                 $"<p>Make <b>{E(info.Email)}</b> your email for {app}?</p>{err}<form method=\"post\">{hidden}<button type=\"submit\">Change my email</button></form>"),
+            "unlinkProvider" => ("Remove the sign-in method",
+                $"<p>Remove the sign-in method just added to your {app} account (<b>{E(info.Email)}</b>)? Every device will be signed out.</p>{err}<form method=\"post\">{hidden}<button type=\"submit\">Remove it</button></form>"),
             "recoverEmail" => ("Undo the email change",
                 $"<p>Put <b>{E(info.Email)}</b> back as your email for {app}? Every device will be signed out.</p>{err}<form method=\"post\">{hidden}<button type=\"submit\">Undo the change</button></form>"),
             _ => ("Verify your email",

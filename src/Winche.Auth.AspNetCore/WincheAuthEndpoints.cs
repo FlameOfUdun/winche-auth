@@ -214,8 +214,7 @@ public static class WincheAuthEndpoints
         {
             if (await RecentMe(http, clock) is not { } uid) return Unauthorized();
             await Limit(http, "email", 10);
-            if (auth is Users.WincheAuthService service) await service.ChangeEmailAsync(uid, body.NewEmail ?? "", SessionOf(http), ct);
-            else await auth.ChangeEmailAsync(uid, body.NewEmail ?? "", ct);
+            await auth.ChangeEmailAsync(uid, body.NewEmail ?? "", ct);
             return Results.Accepted();
         });
         // The page emailed links open (unless o.Email(e => e.ActionUrl = …) points them at the app's own).

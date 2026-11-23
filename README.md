@@ -412,6 +412,9 @@ unhealthy without the database or a signing key, and degraded when user events f
 - An access token whose session has ended (signed out everywhere, ended by an admin, or the account claimed by its
   email's owner) no longer works on Winche Auth's own endpoints (`me`, `me/…`), though it hasn't expired; other services
   checking tokens are unchanged. Claiming an account also ends a two-step set-up only begun.
+- Linking a provider account emails the account's address ("sign-in method added", a new template) with a link that
+  removes it and signs every device out (mode `unlinkProvider` on the action page). Undoing an email change reverses
+  that change and what came after it: providers linked since go, older ones stay.
 - `PATCH me` is a patch: a field left out stays as it is (before, a missing `photoUrl` cleared the photo); a field that
   isn't text or null is refused; names in any case, as before. Sending back the upload's own address (even one from
   before the server moved) keeps the upload. From code, `PatchProfileAsync(uid, ProfilePatch.Name("Ann"))` changes only what it

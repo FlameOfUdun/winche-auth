@@ -56,7 +56,7 @@ internal sealed partial class WincheAuthService
 
     private async Task<ActionCodeInfo> ApplyActionCodeCoreAsync(string code, CancellationToken ct)
     {
-        var row = await FindCodeAsync(code, [AuthEmailKinds.VerifyEmail, AuthEmailKinds.ChangeEmail, AuthEmailKinds.RecoverEmail], ct);
+        var row = await FindCodeAsync(code, [AuthEmailKinds.VerifyEmail, AuthEmailKinds.ChangeEmail, AuthEmailKinds.RecoverEmail, AuthEmailKinds.UnlinkProvider], ct);
         var user = row.UserId is null ? null : await users.FindByIdAsync(row.UserId);
         if (user is null) throw InvalidCode();
         var now = time.GetUtcNow();
@@ -76,14 +76,9 @@ internal sealed partial class WincheAuthService
             {
                 if (await users.FindByEmailAsync(row.Email) is { } other && other.Id != user.Id) throw EmailExists();
                 var old = user.Email;
-                // When the session that asked for it began: an undo from the old address removes providers linked since.
-                var asked = await users.GetAuthenticationTokenAsync(user, TokenProvider, ChangeAskedFrom(row.Email));
-                await users.RemoveAuthenticationTokenAsync(user, TokenProvider, ChangeAskedFrom(row.Email));
-                if (old is not null)
-                {
-                    if (asked is not null) await SetTokenAsync(user, LinkedBefore(old), asked);
-                    else await users.RemoveAuthenticationTokenAsync(user, TokenProvider, LinkedBefore(old));   // not known: an undo removes them all
-                }
+                // When it changed: an undo from the old address reverses this change and what was done after it (providers
+                // linked before it are the owner's or were announced to them as they were linked).
+                if (old is not null) await SetTokenAsync(user, ChangedAt(old), now.ToUnixTimeMilliseconds().ToString());
                 user.Email = row.Email;
                 user.NormalizedEmail = users.NormalizeEmail(row.Email);
                 user.EmailConfirmed = true;
@@ -99,6 +94,10 @@ internal sealed partial class WincheAuthService
                 break;
             }
 
+            case AuthEmailKinds.UnlinkProvider:
+                await UnlinkFromEmailAsync(row, user, ct);
+                break;
+
             case AuthEmailKinds.RecoverEmail:
             {
                 if (await users.FindByEmailAsync(row.Email) is { } other && other.Id != user.Id) throw EmailExists();
@@ -113,10 +112,10 @@ internal sealed partial class WincheAuthService
                     var removed = await users.RemovePasswordAsync(user);
                     if (!removed.Succeeded) throw Failed(removed);
                 }
-                // …and providers linked since the session that asked for the change began (whoever had it may have linked
-                // theirs first); the owner's older ones stay. Not known when it was asked: all go.
-                var since = long.TryParse(await users.GetAuthenticationTokenAsync(user, TokenProvider, LinkedBefore(row.Email)), out var ms) ? ms : (long?)null;
-                await users.RemoveAuthenticationTokenAsync(user, TokenProvider, LinkedBefore(row.Email));
+                // …and providers linked since the change (each one linked before it was emailed to the owner with a link
+                // that removes it). Not known when it changed: all go.
+                var since = long.TryParse(await users.GetAuthenticationTokenAsync(user, TokenProvider, ChangedAt(row.Email)), out var ms) ? ms : (long?)null;
+                await users.RemoveAuthenticationTokenAsync(user, TokenProvider, ChangedAt(row.Email));
                 foreach (var login in await users.GetLoginsAsync(user))
                 {
                     var linked = long.TryParse(await users.GetAuthenticationTokenAsync(user, TokenProvider, LinkedAt(login.LoginProvider, login.ProviderKey)), out var l)
@@ -140,14 +139,50 @@ internal sealed partial class WincheAuthService
         return new ActionCodeInfo(Mode(row.Kind), row.Email);
     }
 
-    /// <summary>When the session that changed the address away from <paramref name="old"/> began (Unix ms).</summary>
-    private static string LinkedBefore(string old) => "change-session-began:" + old.ToLowerInvariant();
-
-    /// <summary>When the session that asked to change the address to <paramref name="address"/> began (Unix ms), until it's confirmed.</summary>
-    private static string ChangeAskedFrom(string address) => "change-asked-from:" + address.ToLowerInvariant();
+    /// <summary>When the address was changed away from <paramref name="old"/> (Unix ms).</summary>
+    private static string ChangedAt(string old) => "email-changed-from:" + old.ToLowerInvariant();
 
     /// <summary>When a provider account was linked (Unix ms).</summary>
-    private static string LinkedAt(string provider, string key) => $"linked-at:{provider}:{key}";
+    internal static string LinkedAt(string provider, string key) => $"linked-at:{provider}:{key}";
+
+    /// <summary>Which provider account an unlink code (by its id) removes: "provider\tkey".</summary>
+    private static string UnlinkTarget(Guid code) => $"unlink-code:{code:N}";
+
+    // ── provider linked: the owner is told, with a link that removes it ─────────
+
+    /// <summary>
+    /// Emails the account's address that <paramref name="provider"/> was linked, with a link that unlinks it and signs
+    /// every device out. Never held back by the hourly limit, and never replacing an earlier such link.
+    /// </summary>
+    internal async Task SendProviderLinkedAsync(WincheUser user, string provider, string? providerName, string key, CancellationToken ct)
+    {
+        if (options.EmailSending is null || string.IsNullOrEmpty(user.Email)) return;
+        var settings = RequireEmail();
+        Guid made = default;
+        await SendCodeAsync(AuthEmailKinds.ProviderLinked, AuthEmailKinds.UnlinkProvider, user, user.Email, settings.UndoLinkLifetime,
+            new Dictionary<string, string?> { ["PROVIDER"] = providerName ?? provider }, ct, limit: false, background: true, made: id => made = id);
+        if (made != default) await SetTokenAsync(user, UnlinkTarget(made), $"{provider}\t{key}");
+    }
+
+    private async Task UnlinkFromEmailAsync(AuthActionCode row, WincheUser user, CancellationToken ct)
+    {
+        var target = await users.GetAuthenticationTokenAsync(user, TokenProvider, UnlinkTarget(row.Id));
+        if (target?.Split('\t', 2) is not [var provider, var key]) throw InvalidCode();
+        await users.RemoveAuthenticationTokenAsync(user, TokenProvider, UnlinkTarget(row.Id));
+        if ((await users.GetLoginsAsync(user)).Any(l => l.LoginProvider == provider && l.ProviderKey == key))
+        {
+            ForgetProviderPhoto(user, provider);
+            var unlinked = await users.RemoveLoginAsync(user, provider, key);
+            if (!unlinked.Succeeded) throw Failed(unlinked);
+            await users.RemoveAuthenticationTokenAsync(user, TokenProvider, LinkedAt(provider, key));
+        }
+        await Save(user);
+        await UseAsync(row, ct);
+        await sessions.RevokeAllAsync(user.Id, "a linked provider removed from the email", ct);
+        AuthEvents.Log(_events, LogLevel.Warning, "auth.unlinkFromEmail", user.Id, "ok",
+            $"{user.Id} removed the {provider} account linked to it from the email that announced it; every session was ended.", row.Email);
+        await Record(WincheAuthUserEvent.Updated, await InfoAsync(user), ct);
+    }
 
     // ── password reset ──────────────────────────────────────────────────────────
 
@@ -266,13 +301,7 @@ internal sealed partial class WincheAuthService
 
     // ── changing the email ──────────────────────────────────────────────────────
 
-    public Task ChangeEmailAsync(string uid, string newEmail, CancellationToken ct) => ChangeEmailAsync(uid, newEmail, null, ct);
-
-    /// <summary>
-    /// As <see cref="ChangeEmailAsync(string, string, CancellationToken)"/>, asked from <paramref name="session"/>: if the
-    /// old address undoes the change, providers linked since that session began go (whoever had it may have linked theirs).
-    /// </summary>
-    public async Task ChangeEmailAsync(string uid, string newEmail, Guid? session, CancellationToken ct)
+    public async Task ChangeEmailAsync(string uid, string newEmail, CancellationToken ct)
     {
         var settings = RequireEmail();
         var user = await Find(uid);
@@ -281,11 +310,6 @@ internal sealed partial class WincheAuthService
         if (string.Equals(user.Email, newEmail, StringComparison.OrdinalIgnoreCase))
             throw new AuthException(AuthErrorCodes.InvalidArgument, "That's already the account's email.");
         if (await users.FindByEmailAsync(newEmail) is not null) throw EmailExists();
-        var began = session is { } sid
-            ? await db.Sessions.Where(x => x.Id == sid && x.UserId == user.Id).Select(x => (DateTimeOffset?)x.CreatedAt).FirstOrDefaultAsync(ct)
-            : null;
-        if (began is { } at) await SetTokenAsync(user, ChangeAskedFrom(newEmail), at.ToUnixTimeMilliseconds().ToString());
-        else await users.RemoveAuthenticationTokenAsync(user, TokenProvider, ChangeAskedFrom(newEmail));
         // The change happens when the new address confirms it.
         await SendCodeAsync(AuthEmailKinds.VerifyEmail, AuthEmailKinds.ChangeEmail, user, newEmail, settings.VerifyLinkLifetime,
             new Dictionary<string, string?> { ["EMAIL"] = newEmail }, ct);
@@ -341,7 +365,7 @@ internal sealed partial class WincheAuthService
         var template = await TemplateAsync(kind, ct);
         var values = new Dictionary<string, string?>
         {
-            ["APP_NAME"] = settings.AppName, ["EMAIL"] = to, ["NEW_EMAIL"] = "new.address@example.com", ["DISPLAY_NAME"] = "",
+            ["APP_NAME"] = settings.AppName, ["EMAIL"] = to, ["NEW_EMAIL"] = "new.address@example.com", ["DISPLAY_NAME"] = "", ["PROVIDER"] = "Google",
         };
         var message = EmailTemplates.Render(kind, template, to, values, $"{ActionUrl(settings)}?mode=test&code=this-is-a-test");
         await Sender(settings).SendAsync(message with { Subject = "[Test] " + message.Subject }, ct);
@@ -350,21 +374,24 @@ internal sealed partial class WincheAuthService
     // ── helpers ─────────────────────────────────────────────────────────────────
 
     /// <summary>A new one-time code of <paramref name="codeKind"/> for <paramref name="to"/>, replacing earlier ones of its kind, as its link.</summary>
-    private async Task<string> NewLinkAsync(string codeKind, WincheUser? user, string to, TimeSpan lifetime, CancellationToken ct)
+    private async Task<string> NewLinkAsync(string codeKind, WincheUser? user, string to, TimeSpan lifetime, CancellationToken ct, Action<Guid>? made = null)
     {
         var settings = RequireEmail();
         var now = time.GetUtcNow();
         var address = to.ToLowerInvariant();
-        await db.ActionCodes.Where(c => c.Kind == codeKind && c.Email.ToLower() == address && c.UsedAt == null)
-            .ExecuteUpdateAsync(u => u.SetProperty(c => c.UsedAt, now), ct);
+        if (codeKind != AuthEmailKinds.UnlinkProvider)   // each linked provider keeps its own
+            await db.ActionCodes.Where(c => c.Kind == codeKind && c.Email.ToLower() == address && c.UsedAt == null)
+                .ExecuteUpdateAsync(u => u.SetProperty(c => c.UsedAt, now), ct);
 
         var code = Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(32));
+        var id = Guid.NewGuid();
         db.ActionCodes.Add(new AuthActionCode
         {
-            Id = Guid.NewGuid(), Kind = codeKind, UserId = user?.Id, Email = to, CodeHash = SHA256.HashData(System.Text.Encoding.ASCII.GetBytes(code)),
+            Id = id, Kind = codeKind, UserId = user?.Id, Email = to, CodeHash = SHA256.HashData(System.Text.Encoding.ASCII.GetBytes(code)),
             CreatedAt = now, ExpiresAt = now + lifetime,
         });
         await db.SaveChangesAsync(ct);
+        made?.Invoke(id);
 
         return codeKind == AuthEmailKinds.SignIn
             ? $"{options.EmailLinkSignIn!.LinkUrl}{(options.EmailLinkSignIn.LinkUrl.Contains('?') ? '&' : '?')}mode=signIn&code={code}"
@@ -376,7 +403,7 @@ internal sealed partial class WincheAuthService
 
     /// <summary>Makes a one-time code, and emails its link with the <paramref name="template"/> message.</summary>
     private async Task SendCodeAsync(string template, string codeKind, WincheUser? user, string to, TimeSpan lifetime,
-        Dictionary<string, string?>? values, CancellationToken ct, bool limit = true, bool background = false)
+        Dictionary<string, string?>? values, CancellationToken ct, bool limit = true, bool background = false, Action<Guid>? made = null)
     {
         var settings = RequireEmail();
         var now = time.GetUtcNow();
@@ -388,7 +415,7 @@ internal sealed partial class WincheAuthService
                 $"Not sending another {template} email to {to}: {settings.MaxPerAddressPerHour} in the last hour.", to);
             return;
         }
-        var link = await NewLinkAsync(codeKind, user, to, lifetime, ct);
+        var link = await NewLinkAsync(codeKind, user, to, lifetime, ct, made);
         var all = new Dictionary<string, string?>
         {
             ["APP_NAME"] = settings.AppName, ["EMAIL"] = user?.Email ?? to, ["NEW_EMAIL"] = null, ["DISPLAY_NAME"] = user?.DisplayName ?? "",

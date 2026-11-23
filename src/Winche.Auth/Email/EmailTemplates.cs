@@ -3,7 +3,7 @@ using System.Text;
 
 namespace Winche.Auth.Email;
 
-/// <summary>A message's text with placeholders: %APP_NAME%, %EMAIL%, %NEW_EMAIL%, %DISPLAY_NAME%, %LINK%.</summary>
+/// <summary>A message's text with placeholders: %APP_NAME%, %EMAIL%, %NEW_EMAIL%, %PROVIDER%, %DISPLAY_NAME%, %LINK%.</summary>
 public sealed record EmailTemplate(string Subject, string Body);
 
 /// <summary>A template as the console shows it: the one in use, and the default it may override.</summary>
@@ -22,6 +22,8 @@ internal static class EmailTemplates
             "Hello,\n\nUse this link to sign in to %APP_NAME% as %EMAIL%:\n\n%LINK%\n\nThe link works once. If you didn't ask for it, ignore this email.")),
         [AuthEmailKinds.EmailChanged] = ("Email changed", new("Your %APP_NAME% email was changed",
             "Hello %DISPLAY_NAME%,\n\nThe email for your %APP_NAME% account was changed from %EMAIL% to %NEW_EMAIL%. If you didn't do this, undo it:\n\n%LINK%")),
+        [AuthEmailKinds.ProviderLinked] = ("Sign-in method added", new("A sign-in method was added to your %APP_NAME% account",
+            "Hello %DISPLAY_NAME%,\n\nA %PROVIDER% account can now sign in to your %APP_NAME% account (%EMAIL%). If you didn't do this, remove it (every device will be signed out):\n\n%LINK%")),
     };
 
     public static readonly IReadOnlyDictionary<string, string> ButtonText = new Dictionary<string, string>
@@ -30,6 +32,7 @@ internal static class EmailTemplates
         [AuthEmailKinds.ResetPassword] = "Choose a new password",
         [AuthEmailKinds.SignIn] = "Sign in",
         [AuthEmailKinds.EmailChanged] = "Undo this change",
+        [AuthEmailKinds.ProviderLinked] = "Remove it",
     };
 
     public static AuthEmailMessage Render(string kind, EmailTemplate template, string to, IReadOnlyDictionary<string, string?> values, string? link)
