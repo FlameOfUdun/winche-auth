@@ -76,6 +76,9 @@ internal sealed partial class WincheAuthService
             {
                 if (await users.FindByEmailAsync(row.Email) is { } other && other.Id != user.Id) throw EmailExists();
                 var old = user.Email;
+                // The providers linked now are the owner's: an undo from the old address keeps these and removes the rest.
+                if (old is not null)
+                    await SetTokenAsync(user, LinkedBefore(old), string.Join('\n', (await users.GetLoginsAsync(user)).Select(l => $"{l.LoginProvider}\t{l.ProviderKey}")));
                 user.Email = row.Email;
                 user.NormalizedEmail = users.NormalizeEmail(row.Email);
                 user.EmailConfirmed = true;
@@ -105,9 +108,13 @@ internal sealed partial class WincheAuthService
                     var removed = await users.RemovePasswordAsync(user);
                     if (!removed.Succeeded) throw Failed(removed);
                 }
-                // …and providers they may have linked: the owner links their own again.
+                // …and providers they may have linked since (the owner's own, linked before the change, stay; a change
+                // made before this was kept: all go).
+                var kept = (await users.GetAuthenticationTokenAsync(user, TokenProvider, LinkedBefore(row.Email)))?.Split('\n', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
+                await users.RemoveAuthenticationTokenAsync(user, TokenProvider, LinkedBefore(row.Email));
                 foreach (var login in await users.GetLoginsAsync(user))
                 {
+                    if (kept?.Contains($"{login.LoginProvider}\t{login.ProviderKey}") == true) continue;
                     ForgetProviderPhoto(user, login.LoginProvider);
                     var unlinked = await users.RemoveLoginAsync(user, login.LoginProvider, login.ProviderKey);
                     if (!unlinked.Succeeded) throw Failed(unlinked);
@@ -124,6 +131,9 @@ internal sealed partial class WincheAuthService
         }
         return new ActionCodeInfo(Mode(row.Kind), row.Email);
     }
+
+    /// <summary>Where the providers linked when the address <paramref name="old"/> was changed away are kept.</summary>
+    private static string LinkedBefore(string old) => "linked-before-change:" + old.ToLowerInvariant();
 
     // ── password reset ──────────────────────────────────────────────────────────
 

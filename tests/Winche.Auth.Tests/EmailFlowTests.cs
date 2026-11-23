@@ -279,8 +279,22 @@ public class EmailFlowTests(PostgresFixture pg)
         // Ann undoes the change: their Google account no longer signs in to hers.
         await TestApp.Json(await Apply(app, undo));
         Assert.Equal("ann@example.com", (await app.Scoped(a => a.GetUserAsync(s.Uid)))!.Email);
-        var after = await app.PostAsync("/auth/v1/signIn/idp", new { provider = "google", idToken = google });
-        if (after.IsSuccessStatusCode) Assert.NotEqual(s.Uid, (await app.SessionAsync(after)).Uid);
+        Assert.NotEqual(s.Uid, (await app.SessionAsync(await app.PostAsync("/auth/v1/signIn/idp", new { provider = "google", idToken = google }))).Uid);
+    }
+
+    [Fact]
+    public async Task Undoing_an_email_change_keeps_the_providers_the_owner_had()
+    {
+        var (app, outbox) = await Start(o => o.Google(g => { g.Audiences = ["app"]; g.AllowUnsignedTokensForTesting = true; }));
+        await using var _ = app;
+        // Ann signs in with Google only (her address verified by it).
+        var ann = GoogleToken("ann");
+        var s = await app.SessionAsync(await app.PostAsync("/auth/v1/signIn/idp", new { provider = "google", idToken = ann }));
+        await app.PostAsync("/auth/v1/me/email", new { newEmail = "evil@example.com" }, s.AccessToken);
+        await TestApp.Json(await Apply(app, Outbox.Code(outbox.Last("evil@example.com"))));
+        await TestApp.Json(await Apply(app, Outbox.Code(outbox.Last("ann@example.com"))));
+        // Her Google account still signs her in.
+        Assert.Equal(s.Uid, (await app.SessionAsync(await app.PostAsync("/auth/v1/signIn/idp", new { provider = "google", idToken = ann }))).Uid);
     }
 
     private static string GoogleToken(string sub)
