@@ -297,6 +297,26 @@ public class EmailFlowTests(PostgresFixture pg)
         Assert.Equal(s.Uid, (await app.SessionAsync(await app.PostAsync("/auth/v1/signIn/idp", new { provider = "google", idToken = ann }))).Uid);
     }
 
+    [Fact]
+    public async Task Undoing_an_email_change_removes_a_provider_linked_in_the_session_that_asked_for_it()
+    {
+        var (app, outbox) = await Start(o => o.Google(g => { g.Audiences = ["app"]; g.AllowUnsignedTokensForTesting = true; }));
+        await using var _ = app;
+        // Ann's account, verified.
+        var s = await app.SignUpAsync("ann@example.com");
+        await app.PostAsync("/auth/v1/sendVerification", null, s.AccessToken);
+        await TestApp.Json(await Apply(app, Outbox.Code(outbox.Last("ann@example.com"))));
+        // Someone with her signed-in session links their own Google first, then moves the address to theirs.
+        var session = await app.SessionAsync(await app.PostAsync("/auth/v1/signIn", new { email = "ann@example.com", password = "correct horse battery" }));
+        var theirs = GoogleToken("intruder");
+        await app.SessionAsync(await app.PostAsync("/auth/v1/link/idp", new { provider = "google", idToken = theirs }, session.AccessToken));
+        await app.PostAsync("/auth/v1/me/email", new { newEmail = "evil@example.com" }, session.AccessToken);
+        await TestApp.Json(await Apply(app, Outbox.Code(outbox.Last("evil@example.com"))));
+        // Ann undoes it: their Google no longer signs in to her account.
+        await TestApp.Json(await Apply(app, Outbox.Code(outbox.Last("ann@example.com"))));
+        Assert.NotEqual(s.Uid, (await app.SessionAsync(await app.PostAsync("/auth/v1/signIn/idp", new { provider = "google", idToken = theirs }))).Uid);
+    }
+
     private static string GoogleToken(string sub)
     {
         var b64 = (object o) => Microsoft.IdentityModel.Tokens.Base64UrlEncoder.Encode(System.Text.Json.JsonSerializer.Serialize(o));

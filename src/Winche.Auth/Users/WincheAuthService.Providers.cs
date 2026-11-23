@@ -113,6 +113,7 @@ internal sealed partial class WincheAuthService
             throw new AuthException(AuthErrorCodes.ProviderAlreadyLinked, $"Another {provider.DisplayName ?? provider.Name} account is already linked: unlink it first.");
         var added = await users.AddLoginAsync(user, new UserLoginInfo(provider.Name, id.Subject, provider.DisplayName));
         if (!added.Succeeded) throw Failed(added);
+        await SetTokenAsync(user, LinkedAt(provider.Name, id.Subject), time.GetUtcNow().ToUnixTimeMilliseconds().ToString());   // an undo of an email change asks when
         if (user.IsAnonymous)
         {
             user.IsAnonymous = false;

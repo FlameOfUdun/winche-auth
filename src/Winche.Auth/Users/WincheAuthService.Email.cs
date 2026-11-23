@@ -76,9 +76,14 @@ internal sealed partial class WincheAuthService
             {
                 if (await users.FindByEmailAsync(row.Email) is { } other && other.Id != user.Id) throw EmailExists();
                 var old = user.Email;
-                // The providers linked now are the owner's: an undo from the old address keeps these and removes the rest.
+                // When the session that asked for it began: an undo from the old address removes providers linked since.
+                var asked = await users.GetAuthenticationTokenAsync(user, TokenProvider, ChangeAskedFrom(row.Email));
+                await users.RemoveAuthenticationTokenAsync(user, TokenProvider, ChangeAskedFrom(row.Email));
                 if (old is not null)
-                    await SetTokenAsync(user, LinkedBefore(old), string.Join('\n', (await users.GetLoginsAsync(user)).Select(l => $"{l.LoginProvider}\t{l.ProviderKey}")));
+                {
+                    if (asked is not null) await SetTokenAsync(user, LinkedBefore(old), asked);
+                    else await users.RemoveAuthenticationTokenAsync(user, TokenProvider, LinkedBefore(old));   // not known: an undo removes them all
+                }
                 user.Email = row.Email;
                 user.NormalizedEmail = users.NormalizeEmail(row.Email);
                 user.EmailConfirmed = true;
@@ -108,13 +113,16 @@ internal sealed partial class WincheAuthService
                     var removed = await users.RemovePasswordAsync(user);
                     if (!removed.Succeeded) throw Failed(removed);
                 }
-                // …and providers they may have linked since (the owner's own, linked before the change, stay; a change
-                // made before this was kept: all go).
-                var kept = (await users.GetAuthenticationTokenAsync(user, TokenProvider, LinkedBefore(row.Email)))?.Split('\n', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
+                // …and providers linked since the session that asked for the change began (whoever had it may have linked
+                // theirs first); the owner's older ones stay. Not known when it was asked: all go.
+                var since = long.TryParse(await users.GetAuthenticationTokenAsync(user, TokenProvider, LinkedBefore(row.Email)), out var ms) ? ms : (long?)null;
                 await users.RemoveAuthenticationTokenAsync(user, TokenProvider, LinkedBefore(row.Email));
                 foreach (var login in await users.GetLoginsAsync(user))
                 {
-                    if (kept?.Contains($"{login.LoginProvider}\t{login.ProviderKey}") == true) continue;
+                    var linked = long.TryParse(await users.GetAuthenticationTokenAsync(user, TokenProvider, LinkedAt(login.LoginProvider, login.ProviderKey)), out var l)
+                        ? l : user.CreatedAt.ToUnixTimeMilliseconds();   // linked as the account was made (or before links were dated)
+                    if (since is { } cutoff && linked < cutoff) continue;
+                    await users.RemoveAuthenticationTokenAsync(user, TokenProvider, LinkedAt(login.LoginProvider, login.ProviderKey));
                     ForgetProviderPhoto(user, login.LoginProvider);
                     var unlinked = await users.RemoveLoginAsync(user, login.LoginProvider, login.ProviderKey);
                     if (!unlinked.Succeeded) throw Failed(unlinked);
@@ -132,8 +140,14 @@ internal sealed partial class WincheAuthService
         return new ActionCodeInfo(Mode(row.Kind), row.Email);
     }
 
-    /// <summary>Where the providers linked when the address <paramref name="old"/> was changed away are kept.</summary>
-    private static string LinkedBefore(string old) => "linked-before-change:" + old.ToLowerInvariant();
+    /// <summary>When the session that changed the address away from <paramref name="old"/> began (Unix ms).</summary>
+    private static string LinkedBefore(string old) => "change-session-began:" + old.ToLowerInvariant();
+
+    /// <summary>When the session that asked to change the address to <paramref name="address"/> began (Unix ms), until it's confirmed.</summary>
+    private static string ChangeAskedFrom(string address) => "change-asked-from:" + address.ToLowerInvariant();
+
+    /// <summary>When a provider account was linked (Unix ms).</summary>
+    private static string LinkedAt(string provider, string key) => $"linked-at:{provider}:{key}";
 
     // ── password reset ──────────────────────────────────────────────────────────
 
@@ -252,7 +266,13 @@ internal sealed partial class WincheAuthService
 
     // ── changing the email ──────────────────────────────────────────────────────
 
-    public async Task ChangeEmailAsync(string uid, string newEmail, CancellationToken ct)
+    public Task ChangeEmailAsync(string uid, string newEmail, CancellationToken ct) => ChangeEmailAsync(uid, newEmail, null, ct);
+
+    /// <summary>
+    /// As <see cref="ChangeEmailAsync(string, string, CancellationToken)"/>, asked from <paramref name="session"/>: if the
+    /// old address undoes the change, providers linked since that session began go (whoever had it may have linked theirs).
+    /// </summary>
+    public async Task ChangeEmailAsync(string uid, string newEmail, Guid? session, CancellationToken ct)
     {
         var settings = RequireEmail();
         var user = await Find(uid);
@@ -261,6 +281,11 @@ internal sealed partial class WincheAuthService
         if (string.Equals(user.Email, newEmail, StringComparison.OrdinalIgnoreCase))
             throw new AuthException(AuthErrorCodes.InvalidArgument, "That's already the account's email.");
         if (await users.FindByEmailAsync(newEmail) is not null) throw EmailExists();
+        var began = session is { } sid
+            ? await db.Sessions.Where(x => x.Id == sid && x.UserId == user.Id).Select(x => (DateTimeOffset?)x.CreatedAt).FirstOrDefaultAsync(ct)
+            : null;
+        if (began is { } at) await SetTokenAsync(user, ChangeAskedFrom(newEmail), at.ToUnixTimeMilliseconds().ToString());
+        else await users.RemoveAuthenticationTokenAsync(user, TokenProvider, ChangeAskedFrom(newEmail));
         // The change happens when the new address confirms it.
         await SendCodeAsync(AuthEmailKinds.VerifyEmail, AuthEmailKinds.ChangeEmail, user, newEmail, settings.VerifyLinkLifetime,
             new Dictionary<string, string?> { ["EMAIL"] = newEmail }, ct);
