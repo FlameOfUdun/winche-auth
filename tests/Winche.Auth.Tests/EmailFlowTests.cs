@@ -243,4 +243,51 @@ public class EmailFlowTests(PostgresFixture pg)
         Assert.Equal((400, "EMAIL_NOT_SET_UP"), await TestApp.Error(await app.PostAsync("/auth/v1/sendPasswordReset", new { email = "ann@example.com" })));
         await app.SignUpAsync("ann@example.com");   // no verify email, no error
     }
+
+    [Fact]
+    public async Task Claiming_an_account_cancels_codes_whoever_made_it_asked_for()
+    {
+        var (app, outbox) = await Start();
+        await using var _ = app;
+        // Someone signs up with Ann's address and asks to move the account to theirs: the code comes to them.
+        var s = await app.SignUpAsync("ann@example.com");
+        Assert.Equal(HttpStatusCode.Accepted, (await app.PostAsync("/auth/v1/me/email", new { newEmail = "evil@example.com" }, s.AccessToken)).StatusCode);
+        var theirs = Outbox.Code(outbox.Last("evil@example.com"));
+        // Ann claims it by resetting the password from her inbox…
+        await app.PostAsync("/auth/v1/sendPasswordReset", new { email = "ann@example.com" });
+        await TestApp.Json(await app.PostAsync("/auth/v1/resetPassword", new { code = Outbox.Code(outbox.Last("ann@example.com")), newPassword = "a brand new password" }));
+        // …and their code no longer takes it away.
+        Assert.Equal((400, "INVALID_CODE"), await TestApp.Error(await Apply(app, theirs)));
+        Assert.Equal("ann@example.com", (await app.Scoped(a => a.GetUserAsync(s.Uid)))!.Email);
+    }
+
+    [Fact]
+    public async Task Undoing_an_email_change_removes_providers_linked_since()
+    {
+        var (app, outbox) = await Start(o => o.Google(g => { g.Audiences = ["app"]; g.AllowUnsignedTokensForTesting = true; }));
+        await using var _ = app;
+        var s = await app.SignUpAsync("ann@example.com");
+        await app.PostAsync("/auth/v1/me/email", new { newEmail = "evil@example.com" }, s.AccessToken);
+        await TestApp.Json(await Apply(app, Outbox.Code(outbox.Last("evil@example.com"))));
+        var undo = Outbox.Code(outbox.Last("ann@example.com"));
+        // Whoever now has the account signs in and links their own Google account.
+        await app.PostAsync("/auth/v1/sendPasswordReset", new { email = "evil@example.com" });
+        await TestApp.Json(await app.PostAsync("/auth/v1/resetPassword", new { code = Outbox.Code(outbox.Last("evil@example.com")), newPassword = "a brand new password" }));
+        var evil = await app.SessionAsync(await app.PostAsync("/auth/v1/signIn", new { email = "evil@example.com", password = "a brand new password" }));
+        var google = GoogleToken("g-1");
+        await app.SessionAsync(await app.PostAsync("/auth/v1/link/idp", new { provider = "google", idToken = google }, evil.AccessToken));
+        // Ann undoes the change: their Google account no longer signs in to hers.
+        await TestApp.Json(await Apply(app, undo));
+        Assert.Equal("ann@example.com", (await app.Scoped(a => a.GetUserAsync(s.Uid)))!.Email);
+        var after = await app.PostAsync("/auth/v1/signIn/idp", new { provider = "google", idToken = google });
+        if (after.IsSuccessStatusCode) Assert.NotEqual(s.Uid, (await app.SessionAsync(after)).Uid);
+    }
+
+    private static string GoogleToken(string sub)
+    {
+        var b64 = (object o) => Microsoft.IdentityModel.Tokens.Base64UrlEncoder.Encode(System.Text.Json.JsonSerializer.Serialize(o));
+        var payload = new Dictionary<string, object> { ["iss"] = "https://accounts.google.com", ["aud"] = "app", ["sub"] = sub, ["email"] = $"{sub}@example.com",
+            ["email_verified"] = true, ["exp"] = DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeSeconds() };
+        return $"{b64(new { alg = "none" })}.{b64(payload)}.";
+    }
 }

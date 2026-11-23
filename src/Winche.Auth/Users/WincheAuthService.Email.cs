@@ -105,12 +105,19 @@ internal sealed partial class WincheAuthService
                     var removed = await users.RemovePasswordAsync(user);
                     if (!removed.Succeeded) throw Failed(removed);
                 }
-                if (user.TwoFactorEnabled) await ClearMfaAsync(user);
+                // …and providers they may have linked: the owner links their own again.
+                foreach (var login in await users.GetLoginsAsync(user))
+                {
+                    ForgetProviderPhoto(user, login.LoginProvider);
+                    var unlinked = await users.RemoveLoginAsync(user, login.LoginProvider, login.ProviderKey);
+                    if (!unlinked.Succeeded) throw Failed(unlinked);
+                }
+                await ClearMfaAsync(user);   // a set-up only begun too
                 await Save(user);
                 await UseAsync(row, ct);
                 await sessions.RevokeAllAsync(user.Id, "email change undone", ct);
                 AuthEvents.Log(_events, LogLevel.Warning, "auth.recoverEmail", user.Id, "ok",
-                    $"{user.Id} undid the change of their email to {changed}: it's {row.Email} again; the password, two-step sign-in and every session were removed.", row.Email);
+                    $"{user.Id} undid the change of their email to {changed}: it's {row.Email} again; the password, linked providers, two-step sign-in and every session were removed.", row.Email);
                 await Record(WincheAuthUserEvent.Updated, await InfoAsync(user), ct);
                 break;
             }
@@ -147,7 +154,7 @@ internal sealed partial class WincheAuthService
         // All of it or none: a reset that fails part-way (a code used twice) leaves the account as it was.
         return await InTransaction(async () =>
         {
-        await SecureClaimedAccountAsync(user, "reset its password", ct);
+        await SecureClaimedAccountAsync(user, "reset its password", ct, row.Id);
         // Read again under the lock: the address or the account may have changed since the code was checked.
         if (!string.Equals(user.Email, row.Email, StringComparison.OrdinalIgnoreCase)) throw InvalidCode();
         if (user.Disabled) throw Disabled();
@@ -225,7 +232,7 @@ internal sealed partial class WincheAuthService
         // The account secured, verified and the code used together, or not at all.
         await InTransaction(async () =>
         {
-            await SecureClaimedAccountAsync(user, "signed in with an email link", ct);
+            await SecureClaimedAccountAsync(user, "signed in with an email link", ct, row.Id);
             if (user.Disabled) throw Disabled();   // read again under the lock
             user.EmailConfirmed = true;
             await UseAsync(row, ct);

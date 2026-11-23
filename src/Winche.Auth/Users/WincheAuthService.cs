@@ -538,7 +538,7 @@ internal sealed partial class WincheAuthService(
     /// may not be them (signed up with their address first). Everything that person could have set up goes — the
     /// password, linked providers, two-step sign-in, every session — so the account is the address owner's alone.
     /// </summary>
-    private async Task SecureClaimedAccountAsync(WincheUser user, string how, CancellationToken ct)
+    private async Task SecureClaimedAccountAsync(WincheUser user, string how, CancellationToken ct, Guid? applying = null)
     {
         // The user's row first, as profile and photo changes take it, then fresh: what was read before the lock may be old.
         await LockUser(user.Id, ct);
@@ -563,6 +563,10 @@ internal sealed partial class WincheAuthService(
             if (!unlinked.Succeeded) throw Failed(unlinked);
         }
         await ClearMfaAsync(user);   // a set-up only begun goes too: whoever began it can't finish it later
+        // And every code they asked for (a change of the address to theirs, above all), but the one being used now.
+        var now = time.GetUtcNow();
+        await db.ActionCodes.Where(c => c.UserId == user.Id && c.UsedAt == null && c.Id != applying)
+            .ExecuteUpdateAsync(u => u.SetProperty(c => c.UsedAt, now), ct);
         await sessions.RevokeAllAsync(user.Id, "email proven by its owner", ct);
         await Save(user);
         await Record(WincheAuthUserEvent.Updated, await InfoAsync(user), ct);   // observers drop the name and photo too
