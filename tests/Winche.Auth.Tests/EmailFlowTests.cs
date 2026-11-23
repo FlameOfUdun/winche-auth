@@ -350,6 +350,47 @@ public class EmailFlowTests(PostgresFixture pg)
         Assert.Equal(s.Uid, (await app.SessionAsync(await app.PostAsync("/auth/v1/signIn/idp", new { provider = "google", idToken = GoogleToken("g-1") }))).Uid);
     }
 
+    [Fact]
+    public async Task Undoing_an_email_change_cancels_every_other_code_whoever_changed_it_kept()
+    {
+        var (app, outbox) = await Start();
+        await using var _ = app;
+        var s = await app.SignUpAsync("ann@example.com");
+        await app.PostAsync("/auth/v1/sendVerification", null, s.AccessToken);
+        await TestApp.Json(await Apply(app, Outbox.Code(outbox.Last("ann@example.com"))));
+        var session = await app.SessionAsync(await app.PostAsync("/auth/v1/signIn", new { email = "ann@example.com", password = "correct horse battery" }));
+        // Someone with her session asks for two changes, and makes one.
+        await app.PostAsync("/auth/v1/me/email", new { newEmail = "evil1@example.com" }, session.AccessToken);
+        await app.PostAsync("/auth/v1/me/email", new { newEmail = "evil2@example.com" }, session.AccessToken);
+        var spare = Outbox.Code(outbox.Last("evil2@example.com"));
+        await TestApp.Json(await Apply(app, Outbox.Code(outbox.Last("evil1@example.com"))));
+        // Ann undoes it: the spare code no longer takes the address again.
+        await TestApp.Json(await Apply(app, Outbox.Code(outbox.Last("ann@example.com"))));
+        Assert.Equal((400, "INVALID_CODE"), await TestApp.Error(await Apply(app, spare)));
+        Assert.Equal("ann@example.com", (await app.Scoped(a => a.GetUserAsync(s.Uid)))!.Email);
+    }
+
+    [Fact]
+    public async Task Undoing_an_email_change_keeps_the_owners_remove_it_links()
+    {
+        var (app, outbox) = await Start(o => o.Google(g => { g.Audiences = ["app"]; g.AllowUnsignedTokensForTesting = true; }));
+        await using var _ = app;
+        var s = await app.SignUpAsync("ann@example.com");
+        await app.PostAsync("/auth/v1/sendVerification", null, s.AccessToken);
+        await TestApp.Json(await Apply(app, Outbox.Code(outbox.Last("ann@example.com"))));
+        var session = await app.SessionAsync(await app.PostAsync("/auth/v1/signIn", new { email = "ann@example.com", password = "correct horse battery" }));
+        // Their Google is linked first (Ann is told), then the address changed and undone.
+        var theirs = GoogleToken("intruder");
+        await app.SessionAsync(await app.PostAsync("/auth/v1/link/idp", new { provider = "google", idToken = theirs }, session.AccessToken));
+        var notice = Outbox.Code(outbox.Last("ann@example.com"));
+        await app.PostAsync("/auth/v1/me/email", new { newEmail = "evil@example.com" }, session.AccessToken);
+        await TestApp.Json(await Apply(app, Outbox.Code(outbox.Last("evil@example.com"))));
+        await TestApp.Json(await Apply(app, Outbox.Code(outbox.Last("ann@example.com"))));
+        // The notice still removes it.
+        await TestApp.Json(await Apply(app, notice));
+        Assert.NotEqual(s.Uid, (await app.SessionAsync(await app.PostAsync("/auth/v1/signIn/idp", new { provider = "google", idToken = theirs }))).Uid);
+    }
+
     private static string GoogleToken(string sub)
     {
         var b64 = (object o) => Microsoft.IdentityModel.Tokens.Base64UrlEncoder.Encode(System.Text.Json.JsonSerializer.Serialize(o));

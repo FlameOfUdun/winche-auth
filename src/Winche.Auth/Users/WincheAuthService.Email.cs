@@ -129,6 +129,12 @@ internal sealed partial class WincheAuthService
                 await ClearMfaAsync(user);   // a set-up only begun too
                 await Save(user);
                 await UseAsync(row, ct);
+                // Every other code goes too (a second change they kept, links to their addresses), but the owner's own
+                // "remove it" links, sent to this address: they may still need them for a provider linked before the change.
+                var owner = row.Email.ToLower();
+                await db.ActionCodes.Where(c => c.UserId == user.Id && c.UsedAt == null && c.Id != row.Id
+                        && !(c.Kind == AuthEmailKinds.UnlinkProvider && c.Email.ToLower() == owner))
+                    .ExecuteUpdateAsync(u => u.SetProperty(c => c.UsedAt, now), ct);
                 await sessions.RevokeAllAsync(user.Id, "email change undone", ct);
                 AuthEvents.Log(_events, LogLevel.Warning, "auth.recoverEmail", user.Id, "ok",
                     $"{user.Id} undid the change of their email to {changed}: it's {row.Email} again; the password, linked providers, two-step sign-in and every session were removed.", row.Email);
