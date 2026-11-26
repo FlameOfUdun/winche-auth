@@ -270,7 +270,9 @@ emails go out after the request is answered, so its timing doesn't tell whether 
 (`e.SendInBackground = false`, or `email.sendInBackground: false` in the console's settings, sends them first). Winche Auth's own page at `/auth/v1/action` only acts when its button is
 pressed, so mail scanners opening links don't use them up. The messages are editable in the Winche console
 (Authentication → Email templates), with `%APP_NAME%`, `%EMAIL%`, `%NEW_EMAIL%`, `%DISPLAY_NAME%` and `%LINK%`. Locally,
-`e.LogLinks()` sends nothing and writes the links to the log.
+`e.LogLinks()` sends nothing and writes the links to the log: anyone who reads the log can use them. Where others read
+it, `e.LogLinks(withLinks: false)` logs only that a message wasn't sent, and `e.LogWithLinks = false` keeps links out
+of the log even when the settings choose "log links only" (2.1.1).
 
 ## Tokens and rules
 
