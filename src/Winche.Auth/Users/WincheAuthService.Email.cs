@@ -52,7 +52,13 @@ internal sealed partial class WincheAuthService
         return new ActionCodeInfo(Mode(row.Kind), row.Email);
     }
 
-    public Task<ActionCodeInfo> ApplyActionCodeAsync(string code, CancellationToken ct) => InTransaction(() => ApplyActionCodeCoreAsync(code, ct), ct);
+    public async Task<ActionCodeInfo> ApplyActionCodeAsync(string code, CancellationToken ct)
+    {
+        var info = await InTransaction(() => ApplyActionCodeCoreAsync(code, ct), ct);
+        // The last way in removed: a password reset sent to the inbox that just proved itself, once it's all saved.
+        if (info.Next == "resetPassword") await SendPasswordResetAsync(info.Email, AuthRequestInfo.Server, ct);
+        return info;
+    }
 
     private async Task<ActionCodeInfo> ApplyActionCodeCoreAsync(string code, CancellationToken ct)
     {
@@ -95,8 +101,7 @@ internal sealed partial class WincheAuthService
             }
 
             case AuthEmailKinds.UnlinkProvider:
-                await UnlinkFromEmailAsync(row, user, ct);
-                break;
+                return new ActionCodeInfo(Mode(row.Kind), row.Email, await UnlinkFromEmailAsync(row, user, ct));
 
             case AuthEmailKinds.RecoverEmail:
             {
@@ -179,7 +184,11 @@ internal sealed partial class WincheAuthService
         if (made != default) await SetTokenAsync(user, UnlinkTarget(made), $"{provider}\t{key}");
     }
 
-    private async Task UnlinkFromEmailAsync(AuthActionCode row, WincheUser user, CancellationToken ct)
+    /// <summary>
+    /// Removes the provider the email announced, even when it's the account's last way in (it may be someone else's that
+    /// took the account over). Then, if none is left, how the owner gets back (see <see cref="ActionCodeInfo.Next"/>).
+    /// </summary>
+    private async Task<string?> UnlinkFromEmailAsync(AuthActionCode row, WincheUser user, CancellationToken ct)
     {
         var target = await users.GetAuthenticationTokenAsync(user, TokenProvider, UnlinkTarget(row.Id));
         if (target?.Split('\t', 2) is not [var provider, var key]) throw InvalidCode();
@@ -191,12 +200,28 @@ internal sealed partial class WincheAuthService
             if (!unlinked.Succeeded) throw Failed(unlinked);
             await users.RemoveAuthenticationTokenAsync(user, TokenProvider, LinkedAt(provider, key));
         }
+        // No way in left? Following the email's link proves the inbox: a password reset or a sign-in link gets them back.
+        string? next = null;
+        var left = (await users.GetLoginsAsync(user)).Count + (user.PasswordHash is not null && options.EmailPasswordSignIn is not null ? 1 : 0)
+            + (options.EmailLinkSignIn is not null && user is { Email: not null, EmailConfirmed: true } ? 1 : 0);
+        if (left == 0)
+        {
+            user.EmailConfirmed = string.Equals(user.Email, row.Email, StringComparison.OrdinalIgnoreCase) || user.EmailConfirmed;
+            next = options.EmailPasswordSignIn is not null ? "resetPassword" : options.EmailLinkSignIn is not null ? "emailLink" : "none";
+        }
         await Save(user);
         await UseAsync(row, ct);
         await sessions.RevokeAllAsync(user.Id, "a linked provider removed from the email", ct);
         AuthEvents.Log(_events, LogLevel.Warning, "auth.unlinkFromEmail", user.Id, "ok",
-            $"{user.Id} removed the {provider} account linked to it from the email that announced it; every session was ended.", row.Email);
+            $"{user.Id} removed the {provider} account linked to it from the email that announced it; every session was ended." + next switch
+            {
+                "resetPassword" => " It was the last way in: a password reset was sent.",
+                "emailLink" => " It was the last way in: they can sign in with an email link.",
+                "none" => " It was the last way in, and this app has no email sign-in: the account can't be signed in to until an admin helps.",
+                _ => "",
+            }, row.Email);
         await Record(WincheAuthUserEvent.Updated, await InfoAsync(user), ct);
+        return next;
     }
 
     // ── password reset ──────────────────────────────────────────────────────────

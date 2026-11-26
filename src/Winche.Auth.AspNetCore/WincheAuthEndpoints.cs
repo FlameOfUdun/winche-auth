@@ -201,7 +201,7 @@ public static class WincheAuthEndpoints
         {
             await Limit(http, "code", 30);
             var info = await auth.ApplyActionCodeAsync(body.Code ?? "", ct);
-            return Results.Json(new { mode = info.Mode, email = info.Email });
+            return Results.Json(new { mode = info.Mode, email = info.Email, next = info.Next });
         });
         group.MapPost("/sendVerification", async (HttpContext http, IWincheAuth auth, CancellationToken ct) =>
         {

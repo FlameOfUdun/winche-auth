@@ -332,6 +332,33 @@ public class EmailFlowTests(PostgresFixture pg)
     }
 
     [Fact]
+    public async Task Removing_the_last_way_to_sign_in_from_the_email_still_removes_it_and_says_what_next()
+    {
+        var (app, outbox) = await Start(o =>
+        {
+            o.Google(g => { g.Audiences = ["app"]; g.AllowUnsignedTokensForTesting = true; });
+            o.Apple(a => { a.Audiences = ["com.example.app"]; a.AllowUnsignedTokensForTesting = true; });
+            o.EmailLinkSignIn = null;   // here, a password reset is the way back
+        });
+        await using var _ = app;
+        // Ann signs in with Google (no password). Someone with her session links their Apple account and removes her Google.
+        var ann = GoogleToken("ann");
+        var s = await app.SessionAsync(await app.PostAsync("/auth/v1/signIn/idp", new { provider = "google", idToken = ann }));
+        var b64 = (object o) => Microsoft.IdentityModel.Tokens.Base64UrlEncoder.Encode(System.Text.Json.JsonSerializer.Serialize(o));
+        var apple = $"{b64(new { alg = "none" })}.{b64(new Dictionary<string, object> { ["iss"] = "https://appleid.apple.com", ["aud"] = "com.example.app", ["sub"] = "intruder-apple", ["exp"] = DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeSeconds() })}.";
+        await app.SessionAsync(await app.PostAsync("/auth/v1/link/idp", new { provider = "apple", idToken = apple }, s.AccessToken));
+        await TestApp.Json(await app.PostAsync("/auth/v1/unlink", new { provider = "google" }, s.AccessToken));
+        var notice = outbox.Last("ann@example.com");
+        Assert.Equal("providerLinked", notice.Kind);
+
+        // The link still takes the intruder's Apple away, though it's now the only way in, and says how Ann gets back.
+        var applied = await TestApp.Json(await Apply(app, Outbox.Code(notice)));
+        Assert.Equal("resetPassword", applied.GetProperty("next").GetString());
+        Assert.Empty((await app.Scoped(a => a.GetUserAsync(s.Uid)))!.Providers.Where(p => p != "password"));
+        Assert.Equal("resetPassword", outbox.Last("ann@example.com").Kind);   // the reset link is in her inbox
+    }
+
+    [Fact]
     public async Task Linking_and_unlinking_over_and_over_never_uses_up_the_owners_emails()
     {
         var (app, outbox) = await Start(o => o.Google(g => { g.Audiences = ["app"]; g.AllowUnsignedTokensForTesting = true; }));

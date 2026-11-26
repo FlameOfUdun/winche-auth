@@ -69,4 +69,8 @@ public sealed record UserListPage(IReadOnlyList<WincheUserInfo> Users, string? N
 public sealed record UserPage(IReadOnlyList<WincheUserInfo> Users, int Total);
 
 /// <summary>What an emailed link does: its mode (verifyEmail, verifyAndChangeEmail, recoverEmail, unlinkProvider, resetPassword, signIn) and address.</summary>
-public sealed record ActionCodeInfo(string Mode, string Email);
+/// <param name="Next">
+/// After a sign-in method was removed from its email and none is left: how the owner gets back in (<c>resetPassword</c>:
+/// a reset link was sent; <c>emailLink</c>: sign in with a link; <c>none</c>: the app's support has to help).
+/// </param>
+public sealed record ActionCodeInfo(string Mode, string Email, string? Next = null);

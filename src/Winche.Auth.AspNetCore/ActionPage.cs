@@ -48,8 +48,17 @@ internal static class ActionPage
                     await auth.ApplyActionCodeAsync(code, http.RequestAborted);
                     return Page(options, "Your email is changed", $"<p>Your account's email is now <b>{E(info.Email)}</b>.</p>");
                 case "unlinkProvider":
-                    await auth.ApplyActionCodeAsync(code, http.RequestAborted);
-                    return Page(options, "It's removed", "<p>That sign-in method no longer signs in to your account, and every device has been signed out. If you didn't add it, change your password too.</p>");
+                {
+                    var done = await auth.ApplyActionCodeAsync(code, http.RequestAborted);
+                    var next = done.Next switch
+                    {
+                        "resetPassword" => $"<p>It was the only way to sign in left, so we've sent a link to <b>{E(done.Email)}</b>: choose a new password with it to sign in again.</p>",
+                        "emailLink" => $"<p>It was the only way to sign in left: sign in with a link sent to <b>{E(done.Email)}</b>.</p>",
+                        "none" => $"<p>It was the only way to sign in left, so the account can't be signed in to for now: ask {E(AppName(options))}'s support to help you back in.</p>",
+                        _ => "<p>If you didn't add it, change your password too.</p>",
+                    };
+                    return Page(options, "It's removed", "<p>That sign-in method no longer signs in to your account, and every device has been signed out.</p>" + next);
+                }
                 case "recoverEmail":
                     await auth.ApplyActionCodeAsync(code, http.RequestAborted);
                     return Page(options, "Your email is back", $"<p>Your account's email is <b>{E(info.Email)}</b> again, and every device has been signed out. If someone else changed it, change your password too.</p>");
