@@ -96,7 +96,7 @@ public sealed record WincheAuthSettings
             SendVerificationOnSignUp = Email.SendVerificationOnSignUp, MaxPerAddressPerHour = Email.MaxPerAddressPerHour,
             VerifyLinkLifetime = TimeSpan.FromHours(Email.VerifyLinkHours), ResetLinkLifetime = TimeSpan.FromHours(Email.ResetLinkHours),
             SignInLinkLifetime = code.SignInLinkLifetime, UndoLinkLifetime = code.UndoLinkLifetime,
-            LogLinksOnly = Email.Sender == "logLinks", SendInBackground = Email.SendInBackground,
+            LogLinksOnly = Email.Sender == "logLinks", LogWithLinks = code.LogWithLinks, SendInBackground = Email.SendInBackground,
             Smtp = Email.Sender == "smtp" && Email.Smtp is { } s ? new SmtpOptions
             {
                 Host = s.Host, Port = s.Port, Security = s.Security, Username = string.IsNullOrWhiteSpace(s.Username) ? null : s.Username,
@@ -142,11 +142,11 @@ public sealed record WincheAuthSettings
 
     /// <summary>What only the app's code can give, kept when settings are applied.</summary>
     public sealed record CodeParts(IReadOnlyList<IdentityProviderOptions> Providers, TimeSpan MfaPending, TimeSpan SignInLinkLifetime, TimeSpan UndoLinkLifetime,
-        string? SmtpHost, string? SmtpPassword)
+        string? SmtpHost, string? SmtpPassword, bool LogWithLinks = true)
     {
         internal static CodeParts From(WincheAuthOptions o) => new(o.IdentityProviders, o.MfaSettings?.PendingLifetime ?? TimeSpan.FromMinutes(5),
             o.EmailSending?.SignInLinkLifetime ?? TimeSpan.FromHours(1), o.EmailSending?.UndoLinkLifetime ?? TimeSpan.FromDays(7),
-            o.EmailSending?.Smtp?.Host, o.EmailSending?.Smtp?.Password);
+            o.EmailSending?.Smtp?.Host, o.EmailSending?.Smtp?.Password, o.EmailSending?.LogWithLinks ?? true);
     }
 }
 

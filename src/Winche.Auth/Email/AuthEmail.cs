@@ -32,12 +32,16 @@ public interface IAuthEmailSender
     Task SendAsync(AuthEmailMessage message, CancellationToken ct);
 }
 
-/// <summary>Sends nothing: writes each message and its link to the log (<c>e.LogLinks()</c>, for local development).</summary>
-internal sealed class LogLinksEmailSender(ILogger<LogLinksEmailSender> logger) : IAuthEmailSender
+/// <summary>
+/// Sends nothing: writes each message to the log (<c>e.LogLinks()</c>), with its link for local development, or
+/// without it (<c>e.LogLinks(withLinks: false)</c>): then only that it wasn't sent, so no working link is anywhere.
+/// </summary>
+internal sealed class LogLinksEmailSender(ILogger<LogLinksEmailSender> logger, bool withLinks = true) : IAuthEmailSender
 {
     public Task SendAsync(AuthEmailMessage message, CancellationToken ct)
     {
-        logger.LogWarning("Email to {To} ({Kind}): \"{Subject}\" {Link}", message.To, message.Kind, message.Subject, message.Link);
+        if (withLinks) logger.LogWarning("Email to {To} ({Kind}): \"{Subject}\" {Link}", message.To, message.Kind, message.Subject, message.Link);
+        else logger.LogWarning("Email to {To} ({Kind}) not sent: no email server is set up.", message.To, message.Kind);
         return Task.CompletedTask;
     }
 }
@@ -74,6 +78,12 @@ public sealed class AuthEmailOptions
     /// <summary>Whether messages are only written to the log (<see cref="LogLinks"/>).</summary>
     public bool LogLinksOnly { get; internal set; }
 
+    /// <summary>
+    /// When only logged (here or in settings), whether the log has the links (true, for local development) or only that
+    /// nothing was sent. Set false where the log is read by others: a saved "log links only" then logs no links either.
+    /// </summary>
+    public bool LogWithLinks { get; set; } = true;
+
     /// <summary>Send through this SMTP server (<see cref="UseSmtp"/>) instead of the app's <see cref="IAuthEmailSender"/>.</summary>
     public SmtpOptions? Smtp { get; internal set; }
 
@@ -86,10 +96,14 @@ public sealed class AuthEmailOptions
         return this;
     }
 
-    /// <summary>Send nothing: write each message's link to the log instead. For local development only.</summary>
-    public AuthEmailOptions LogLinks()
+    /// <summary>
+    /// Send nothing: write each message to the log instead, with its link (<paramref name="withLinks"/>, for local
+    /// development only: anyone who reads the log can use them), or only that it wasn't sent.
+    /// </summary>
+    public AuthEmailOptions LogLinks(bool withLinks = true)
     {
         LogLinksOnly = true;
+        LogWithLinks = withLinks;
         return this;
     }
 }

@@ -490,7 +490,7 @@ internal sealed partial class WincheAuthService
 
     private IAuthEmailSender Sender(AuthEmailOptions settings) =>
         settings.LogLinksOnly
-            ? ActivatorUtilities.CreateInstance<LogLinksEmailSender>(services)
+            ? ActivatorUtilities.CreateInstance<LogLinksEmailSender>(services, settings.LogWithLinks)
             : settings.Smtp is not null
             ? new SmtpEmailSender(settings, services)
             : services.GetService<IAuthEmailSender>()
