@@ -55,8 +55,17 @@ internal sealed partial class WincheAuthService
     public async Task<ActionCodeInfo> ApplyActionCodeAsync(string code, CancellationToken ct)
     {
         var info = await InTransaction(() => ApplyActionCodeCoreAsync(code, ct), ct);
-        // The last way in removed: a password reset sent to the inbox that just proved itself, once it's all saved.
-        if (info.Next == "resetPassword") await SendPasswordResetAsync(info.Email, AuthRequestInfo.Server, ct);
+        // The last way in removed: a password reset sent to the inbox that just proved itself (still the account's email),
+        // once it's all saved. Not sent (the mail server down): the removal stands, and the page says to ask for one.
+        if (info.Next == "resetPassword")
+        {
+            try { await SendPasswordResetAsync(info.Email, AuthRequestInfo.Server, CancellationToken.None); }
+            catch (Exception e)
+            {
+                _events.LogWarning(e, "Winche Auth removed the last sign-in method of {Email} from its email, but couldn't send the password reset.", info.Email);
+                return info with { Next = "resetNotSent" };
+            }
+        }
         return info;
     }
 
@@ -206,8 +215,10 @@ internal sealed partial class WincheAuthService
             + (options.EmailLinkSignIn is not null && user is { Email: not null, EmailConfirmed: true } ? 1 : 0);
         if (left == 0)
         {
-            user.EmailConfirmed = string.Equals(user.Email, row.Email, StringComparison.OrdinalIgnoreCase) || user.EmailConfirmed;
-            next = options.EmailPasswordSignIn is not null ? "resetPassword" : options.EmailLinkSignIn is not null ? "emailLink" : "none";
+            // Back by email only while the account's email is still the address the notice went to (the one just proven).
+            var same = string.Equals(user.Email, row.Email, StringComparison.OrdinalIgnoreCase);
+            user.EmailConfirmed = same || user.EmailConfirmed;
+            next = !same ? "none" : options.EmailPasswordSignIn is not null ? "resetPassword" : options.EmailLinkSignIn is not null ? "emailLink" : "none";
         }
         await Save(user);
         await UseAsync(row, ct);

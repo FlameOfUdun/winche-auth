@@ -54,6 +54,7 @@ internal static class ActionPage
                     {
                         "resetPassword" => $"<p>It was the only way to sign in left, so we've sent a link to <b>{E(done.Email)}</b>: choose a new password with it to sign in again.</p>",
                         "emailLink" => $"<p>It was the only way to sign in left: sign in with a link sent to <b>{E(done.Email)}</b>.</p>",
+                        "resetNotSent" => "<p>It was the only way to sign in left, and the email to choose a new password couldn't be sent just now: ask for a password reset from the sign-in page.</p>",
                         "none" => $"<p>It was the only way to sign in left, so the account can't be signed in to for now: ask {E(AppName(options))}'s support to help you back in.</p>",
                         _ => "<p>If you didn't add it, change your password too.</p>",
                     };

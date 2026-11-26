@@ -359,6 +359,29 @@ public class EmailFlowTests(PostgresFixture pg)
     }
 
     [Fact]
+    public async Task When_the_reset_can_not_be_sent_the_removal_still_stands_and_says_so()
+    {
+        var (app, outbox) = await Start(o =>
+        {
+            o.Google(g => { g.Audiences = ["app"]; g.AllowUnsignedTokensForTesting = true; });
+            o.Apple(a => { a.Audiences = ["com.example.app"]; a.AllowUnsignedTokensForTesting = true; });
+            o.EmailLinkSignIn = null;
+        });
+        await using var _ = app;
+        var s = await app.SessionAsync(await app.PostAsync("/auth/v1/signIn/idp", new { provider = "google", idToken = GoogleToken("ann") }));
+        var b64 = (object o) => Microsoft.IdentityModel.Tokens.Base64UrlEncoder.Encode(System.Text.Json.JsonSerializer.Serialize(o));
+        var apple = $"{b64(new { alg = "none" })}.{b64(new Dictionary<string, object> { ["iss"] = "https://appleid.apple.com", ["aud"] = "com.example.app", ["sub"] = "intruder-apple", ["exp"] = DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeSeconds() })}.";
+        await app.SessionAsync(await app.PostAsync("/auth/v1/link/idp", new { provider = "apple", idToken = apple }, s.AccessToken));
+        await TestApp.Json(await app.PostAsync("/auth/v1/unlink", new { provider = "google" }, s.AccessToken));
+        var notice = outbox.Last("ann@example.com");
+
+        outbox.Down = true;   // the mail server refuses the reset
+        var applied = await TestApp.Json(await Apply(app, Outbox.Code(notice)));
+        Assert.Equal("resetNotSent", applied.GetProperty("next").GetString());
+        Assert.Empty((await app.Scoped(a => a.GetUserAsync(s.Uid)))!.Providers.Where(p => p != "password"));   // removed all the same
+    }
+
+    [Fact]
     public async Task Linking_and_unlinking_over_and_over_never_uses_up_the_owners_emails()
     {
         var (app, outbox) = await Start(o => o.Google(g => { g.Audiences = ["app"]; g.AllowUnsignedTokensForTesting = true; }));
