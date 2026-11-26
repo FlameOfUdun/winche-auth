@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.DependencyInjection;
 using Winche.Auth.Email;
+using Winche.Auth.Mfa;
 
 namespace Winche.Auth.Tests;
 
@@ -138,9 +139,14 @@ public class EmailFlowTests(PostgresFixture pg)
     [Fact]
     public async Task Changing_the_email_needs_the_new_address_and_the_old_one_can_undo_it()
     {
-        var (app, outbox) = await Start();
+        var (app, outbox) = await Start(o => o.Mfa());
         await using var _ = app;
         var s = await app.SignUpAsync("ann@example.com");
+        // Two-step sign-in on (whoever has the account could have set it): the undo takes it away with the rest.
+        var totp = await TestApp.Json(await app.PostAsync("/auth/v1/me/mfa/totp/start", null, s.AccessToken));
+        var secret = totp.GetProperty("secret").GetString()!;
+        await TestApp.Json(await app.PostAsync("/auth/v1/me/mfa/totp/confirm", new { code = Totp.Code(Totp.FromBase32(secret), Totp.Step(DateTimeOffset.UtcNow)) }, s.AccessToken));
+        Assert.True((await app.Scoped(a => a.GetMfaStatusAsync(s.Uid))).Enabled);
         Assert.Equal(HttpStatusCode.Accepted, (await app.PostAsync("/auth/v1/me/email", new { newEmail = "ann.new@example.com" }, s.AccessToken)).StatusCode);
         var confirm = outbox.Last("ann.new@example.com");
         Assert.Equal("verifyEmail", confirm.Kind);
@@ -160,6 +166,8 @@ public class EmailFlowTests(PostgresFixture pg)
         var me = await app.Scoped(a => a.GetUserAsync(s.Uid));
         Assert.Equal("ann@example.com", me!.Email);
         Assert.Equal(401, (int)(await app.PostAsync("/auth/v1/token", new { refreshToken = s.RefreshToken })).StatusCode);   // signed out everywhere
+        var mfa = await app.Scoped(a => a.GetMfaStatusAsync(s.Uid));
+        Assert.Equal((false, 0), (mfa.Enabled, mfa.RecoveryCodesLeft));   // two-step off, its recovery codes gone
     }
 
     [Fact]
