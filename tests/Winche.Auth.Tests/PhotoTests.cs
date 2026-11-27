@@ -48,6 +48,12 @@ public class PhotoTests(PostgresFixture pg)
         // In their next token.
         var next = await app.SessionAsync(await app.PostAsync("/auth/v1/token", new { refreshToken = ann.RefreshToken }));
         Assert.Equal(replaced.GetProperty("photoUrl").GetString(), (await app.WhoAmI(next.AccessToken)).GetProperty("picture").GetString());
+
+        // A disabled user's photo isn't shown (while disabled).
+        await app.Scoped(a => a.SetDisabledAsync(ann.Uid, true));
+        Assert.Equal(HttpStatusCode.NotFound, (await app.Client.GetAsync(second)).StatusCode);
+        await app.Scoped(a => a.SetDisabledAsync(ann.Uid, false));
+        Assert.Equal(HttpStatusCode.OK, (await app.Client.GetAsync(second)).StatusCode);
     }
 
     [Fact]

@@ -53,7 +53,8 @@ internal sealed partial class WincheAuthService
     public async Task<UserPhoto?> GetPhotoAsync(string photoId, CancellationToken ct)
     {
         if (string.IsNullOrEmpty(photoId) || photoId.Length > 40) return null;
-        return await db.Photos.AsNoTracking().Where(p => p.PhotoId == photoId)
+        // A disabled user's isn't shown (one read: the photo and whether its user is disabled).
+        return await db.Photos.AsNoTracking().Where(p => p.PhotoId == photoId && db.Users.Any(u => u.Id == p.UserId && !u.Disabled))
             .Select(p => new UserPhoto(p.Bytes, p.ContentType, p.UpdatedAt)).FirstOrDefaultAsync(ct);
     }
 
