@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using System.Net;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.DependencyInjection;
@@ -329,6 +330,41 @@ public class EmailFlowTests(PostgresFixture pg)
         Assert.NotEqual(s.Uid, (await app.SessionAsync(await app.PostAsync("/auth/v1/signIn/idp", new { provider = "google", idToken = theirs }))).Uid);
         Assert.Equal(401, (int)(await app.SendAsync(HttpMethod.Get, "/auth/v1/me", session.AccessToken)).StatusCode);
         Assert.Equal((400, "INVALID_CODE"), await TestApp.Error(await Apply(app, Outbox.Code(notice))));
+    }
+
+    [Fact]
+    public async Task Only_a_verified_address_is_sent_a_link_that_removes_a_sign_in_method()
+    {
+        var (app, outbox) = await Start(o => o.Google(g => { g.Audiences = ["app"]; g.AllowUnsignedTokensForTesting = true; }));
+        await using var _ = app;
+        // An address no one has proven: whoever reads it mustn't be able to take the account's ways in away.
+        var s = await app.SignUpAsync("ann@example.com");
+        var before = outbox.Count("ann@example.com");
+        await app.SessionAsync(await app.PostAsync("/auth/v1/link/idp", new { provider = "google", idToken = GoogleToken("ann") }, s.AccessToken));
+        Assert.Equal(before, outbox.Count("ann@example.com"));
+        Assert.DoesNotContain(outbox.Sent, m => m.Kind == "providerLinked");
+    }
+
+    [Fact]
+    public async Task An_expired_remove_it_link_leaves_nothing_behind_once_codes_are_cleaned_up()
+    {
+        var (app, outbox) = await Start(o => o.Google(g => { g.Audiences = ["app"]; g.AllowUnsignedTokensForTesting = true; }));
+        await using var _ = app;
+        var s = await app.SignUpAsync("ann@example.com");
+        await app.PostAsync("/auth/v1/sendVerification", null, s.AccessToken);
+        await TestApp.Json(await Apply(app, Outbox.Code(outbox.Last("ann@example.com"))));
+        var session = await app.SessionAsync(await app.PostAsync("/auth/v1/signIn", new { email = "ann@example.com", password = "correct horse battery" }));
+        await app.SessionAsync(await app.PostAsync("/auth/v1/link/idp", new { provider = "google", idToken = GoogleToken("ann") }, session.AccessToken));
+        Assert.Equal("providerLinked", outbox.Last("ann@example.com").Kind);
+
+        await using var scope = app.App.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<Winche.Auth.Data.WincheAuthDbContext>();
+        int UnlinkTokens() => db.UserTokens.Count(t => t.Name.StartsWith("unlink-code:"));
+        Assert.Equal(1, UnlinkTokens());
+        // Long expired, then the hourly clean-up: the link and what it would have removed are both gone.
+        await db.ActionCodes.ExecuteUpdateAsync(c => c.SetProperty(x => x.ExpiresAt, DateTimeOffset.UtcNow.AddDays(-3)));
+        await Winche.Auth.DependencyInjection.WincheAuthStartup.PruneCodesAsync(db, DateTimeOffset.UtcNow.AddDays(-1), default);
+        Assert.Equal(0, UnlinkTokens());
     }
 
     [Fact]

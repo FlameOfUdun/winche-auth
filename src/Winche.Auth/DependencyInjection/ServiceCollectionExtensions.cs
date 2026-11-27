@@ -112,6 +112,18 @@ internal sealed class WincheAuthStartup(IServiceProvider services, SigningKeySto
         await base.StartAsync(ct);
     }
 
+    /// <summary>Deletes codes expired before <paramref name="cutoff"/>, and what a remove-it link kept for its code.</summary>
+    internal static async Task PruneCodesAsync(WincheAuthDbContext db, DateTimeOffset cutoff, CancellationToken ct)
+    {
+        var unlinks = await db.ActionCodes.Where(c => c.ExpiresAt < cutoff && c.Kind == Winche.Auth.Email.AuthEmailKinds.UnlinkProvider).Select(c => c.Id).ToListAsync(ct);
+        foreach (var chunk in unlinks.Chunk(500))
+        {
+            var names = chunk.Select(id => Winche.Auth.Users.WincheAuthService.UnlinkTarget(id)).ToList();
+            await db.UserTokens.Where(t => names.Contains(t.Name)).ExecuteDeleteAsync(ct);
+        }
+        await db.ActionCodes.Where(c => c.ExpiresAt < cutoff).ExecuteDeleteAsync(ct);
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromHours(1));
@@ -123,7 +135,7 @@ internal sealed class WincheAuthStartup(IServiceProvider services, SigningKeySto
                 await using var scope = services.CreateAsyncScope();
                 var pruned = await scope.ServiceProvider.GetRequiredService<SessionStore>().PruneAsync(stoppingToken);
                 var cutoff = DateTimeOffset.UtcNow.AddDays(-1);
-                await scope.ServiceProvider.GetRequiredService<WincheAuthDbContext>().ActionCodes.Where(c => c.ExpiresAt < cutoff).ExecuteDeleteAsync(stoppingToken);
+                await PruneCodesAsync(scope.ServiceProvider.GetRequiredService<WincheAuthDbContext>(), cutoff, stoppingToken);
                 if (pruned > 0) logger.LogInformation("Deleted {Count} ended sessions.", pruned);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)

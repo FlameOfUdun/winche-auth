@@ -166,17 +166,18 @@ internal sealed partial class WincheAuthService
     internal static string LinkedAt(string provider, string key) => $"linked-at:{provider}:{key}";
 
     /// <summary>Which provider account an unlink code (by its id) removes: "provider\tkey".</summary>
-    private static string UnlinkTarget(Guid code) => $"unlink-code:{code:N}";
+    internal static string UnlinkTarget(Guid code) => $"unlink-code:{code:N}";
 
     // ── provider linked: the owner is told, with a link that removes it ─────────
 
     /// <summary>
-    /// Emails the account's address that <paramref name="provider"/> was linked, with a link that unlinks it and signs
+    /// Emails the account's verified address that <paramref name="provider"/> was linked, with a link that unlinks it and signs
     /// every device out. Never held back by the hourly limit, and never replacing an earlier such link.
     /// </summary>
     internal async Task SendProviderLinkedAsync(WincheUser user, string provider, string? providerName, string key, CancellationToken ct)
     {
-        if (options.EmailSending is null || string.IsNullOrEmpty(user.Email)) return;
+        // Only to an address proven theirs: its link takes ways in away (even the last), so an unproven one's reader can't.
+        if (options.EmailSending is null || string.IsNullOrEmpty(user.Email) || !user.EmailConfirmed) return;
         var settings = RequireEmail();
         Guid made = default;
         try
