@@ -59,7 +59,9 @@ internal sealed partial class WincheAuthService
         // once it's all saved. Not sent (the mail server down): the removal stands, and the page says to ask for one.
         if (info.Next == "resetPassword")
         {
-            try { await SendPasswordResetAsync(info.Email, AuthRequestInfo.Server, CancellationToken.None); }
+            // Sent now (so a failure is said), and whatever this hour's count: one per removal link, it can't flood the
+            // inbox, and requests the intruder made mustn't keep the owner's way back from them.
+            try { await SendPasswordResetCoreAsync(info.Email, limit: false, background: false, CancellationToken.None); }
             catch (Exception e)
             {
                 _events.LogWarning(e, "Winche Auth removed the last sign-in method of {Email} from its email, but couldn't send the password reset.", info.Email);
@@ -238,7 +240,10 @@ internal sealed partial class WincheAuthService
 
     // ── password reset ──────────────────────────────────────────────────────────
 
-    public async Task SendPasswordResetAsync(string email, AuthRequestInfo info, CancellationToken ct)
+    public Task SendPasswordResetAsync(string email, AuthRequestInfo info, CancellationToken ct) =>
+        SendPasswordResetCoreAsync(email, limit: true, background: true, ct);
+
+    private async Task SendPasswordResetCoreAsync(string email, bool limit, bool background, CancellationToken ct)
     {
         var settings = RequireEmail();
         RequireEmailPassword();
@@ -251,7 +256,7 @@ internal sealed partial class WincheAuthService
             return;
         }
         // Sent after answering, so how long the request takes doesn't tell whether the address has an account.
-        await SendCodeAsync(AuthEmailKinds.ResetPassword, AuthEmailKinds.ResetPassword, user, user.Email!, settings.ResetLinkLifetime, null, ct, background: true);
+        await SendCodeAsync(AuthEmailKinds.ResetPassword, AuthEmailKinds.ResetPassword, user, user.Email!, settings.ResetLinkLifetime, null, ct, limit: limit, background: background);
     }
 
     public async Task<WincheUserInfo> ResetPasswordAsync(string code, string newPassword, CancellationToken ct)

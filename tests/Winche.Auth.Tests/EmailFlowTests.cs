@@ -408,6 +408,33 @@ public class EmailFlowTests(PostgresFixture pg)
     }
 
     [Fact]
+    public async Task The_reset_sent_after_removing_the_last_way_in_goes_even_when_the_address_used_up_its_hour()
+    {
+        var (app, outbox) = await Start(o =>
+        {
+            o.Google(g => { g.Audiences = ["app"]; g.AllowUnsignedTokensForTesting = true; });
+            o.Apple(a => { a.Audiences = ["com.example.app"]; a.AllowUnsignedTokensForTesting = true; });
+            o.EmailLinkSignIn = null;
+            o.EmailSending!.MaxPerAddressPerHour = 3;
+        });
+        await using var _ = app;
+        var s = await app.SessionAsync(await app.PostAsync("/auth/v1/signIn/idp", new { provider = "google", idToken = GoogleToken("ann") }));
+        var b64 = (object o) => Microsoft.IdentityModel.Tokens.Base64UrlEncoder.Encode(System.Text.Json.JsonSerializer.Serialize(o));
+        var apple = $"{b64(new { alg = "none" })}.{b64(new Dictionary<string, object> { ["iss"] = "https://appleid.apple.com", ["aud"] = "com.example.app", ["sub"] = "intruder-apple", ["exp"] = DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeSeconds() })}.";
+        await app.SessionAsync(await app.PostAsync("/auth/v1/link/idp", new { provider = "apple", idToken = apple }, s.AccessToken));
+        await TestApp.Json(await app.PostAsync("/auth/v1/unlink", new { provider = "google" }, s.AccessToken));
+        var notice = outbox.Last("ann@example.com");
+        // The intruder uses up the address's hour with requests of their own.
+        for (var n = 0; n < 5; n++) await app.PostAsync("/auth/v1/sendPasswordReset", new { email = "ann@example.com" });
+        var before = outbox.Count("ann@example.com");
+
+        var applied = await TestApp.Json(await Apply(app, Outbox.Code(notice)));
+        Assert.Equal("resetPassword", applied.GetProperty("next").GetString());
+        Assert.Equal(before + 1, outbox.Count("ann@example.com"));   // said sent, and sent
+        Assert.Equal("resetPassword", outbox.Last("ann@example.com").Kind);
+    }
+
+    [Fact]
     public async Task When_the_reset_can_not_be_sent_the_removal_still_stands_and_says_so()
     {
         var (app, outbox) = await Start(o =>
