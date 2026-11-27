@@ -300,7 +300,6 @@ public static class WincheAuthEndpoints
         return app;
     }
 
-    /// <summary>The uid of the request's Winche Auth token (not a trusted issuer's), or null.</summary>
     /// <summary>
     /// The signed-in user, while their token's session still stands: a token whose session was ended (its owner proved
     /// the email, signed out everywhere, an admin ended it) does nothing more, though it hasn't expired.
