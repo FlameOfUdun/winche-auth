@@ -15,7 +15,8 @@ internal static class EmailTemplates
     public static readonly IReadOnlyDictionary<string, (string Name, EmailTemplate Template)> Defaults = new Dictionary<string, (string, EmailTemplate)>
     {
         [AuthEmailKinds.VerifyEmail] = ("Verify email", new("Verify your email for %APP_NAME%",
-            "Hello %DISPLAY_NAME%,\n\nConfirm that %EMAIL% is your email address for %APP_NAME%:\n\n%LINK%\n\nIf you didn't ask for this, ignore this email.")),
+            // No %DISPLAY_NAME%: whoever signed up chose it, and they may not be the address's owner.
+            "Hello,\n\nConfirm that %EMAIL% is your email address for %APP_NAME%:\n\n%LINK%\n\nIf you didn't create a %APP_NAME% account, don't use this link: someone else may have signed up with your address.")),
         [AuthEmailKinds.ResetPassword] = ("Reset password", new("Reset your %APP_NAME% password",
             "Hello %DISPLAY_NAME%,\n\nSomeone asked to reset the password for %EMAIL%. To choose a new one:\n\n%LINK%\n\nIf it wasn't you, ignore this email: your password stays the same.")),
         [AuthEmailKinds.SignIn] = ("Sign-in link", new("Sign in to %APP_NAME%",

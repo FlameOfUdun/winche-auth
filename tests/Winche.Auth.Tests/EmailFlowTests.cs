@@ -68,6 +68,19 @@ public class EmailFlowTests(PostgresFixture pg)
     }
 
     [Fact]
+    public async Task The_verify_email_never_greets_by_the_name_whoever_signed_up_chose_and_says_what_to_do_if_it_wasnt_them()
+    {
+        var (app, outbox) = await Start();
+        await using var _ = app;
+        await TestApp.Json(await app.PostAsync("/auth/v1/signUp", new { email = "ann@example.com", password = "correct horse battery", displayName = "Your bank" }));
+        var mail = outbox.Last("ann@example.com");
+        Assert.Equal("verifyEmail", mail.Kind);
+        Assert.DoesNotContain("Your bank", mail.Text);
+        Assert.DoesNotContain("Your bank", mail.Html);
+        Assert.Contains("someone else may have signed up with your address", mail.Text);
+    }
+
+    [Fact]
     public async Task Password_reset_by_email()
     {
         var (app, outbox) = await Start();
